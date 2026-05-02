@@ -46,12 +46,20 @@ function publicState(state) {
   };
 }
 
+function publicSettings() {
+  return {
+    idleAutoStop: config.runtime.idleAutoStop,
+    idleStopMinutes: config.runtime.idleStopMinutes,
+  };
+}
+
 function responseForRole(data, role) {
   if (role === 'admin') {
-    return { role, ...data };
+    return { role, settings: publicSettings(), ...data };
   }
   return {
     role,
+    settings: publicSettings(),
     idempotent: data.idempotent,
     message: data.message,
     state: publicState(data.state),

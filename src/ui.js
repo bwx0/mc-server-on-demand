@@ -62,6 +62,7 @@ export function renderUi() {
     <span id="busyText">空闲</span>
     <span>状态更新时间：<span id="updatedAt">-</span></span>
     <span>最近心跳：<span id="heartbeatAt">-</span></span>
+    <span>自动停服：<span id="idleStopEta">-</span></span>
   </div>
   <h2 id="detailsTitle">详情</h2>
   <pre id="output">Loading...</pre>
@@ -77,6 +78,8 @@ export function renderUi() {
     let busy = false;
     let currentPhase = 'unknown';
     let currentRole = null;
+    let lastState = null;
+    let lastSettings = null;
     tokenInput.value = localStorage.getItem('controlToken') || '';
 
     function formatTime(value) {
@@ -84,6 +87,30 @@ export function renderUi() {
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return value;
       return date.toLocaleString();
+    }
+
+    function formatDuration(ms) {
+      if (!Number.isFinite(ms)) return '-';
+      if (ms <= 0) return '即将停止';
+      const totalSeconds = Math.ceil(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+    }
+
+    function updateIdleStopEta() {
+      const target = document.getElementById('idleStopEta');
+      if (!lastState || !lastSettings?.idleAutoStop) {
+        target.textContent = '-';
+        return;
+      }
+      if (lastState.phase !== 'running' || lastState.playerCount !== 0 || !lastState.zeroPlayersSince) {
+        target.textContent = '-';
+        return;
+      }
+      const startedAt = new Date(lastState.zeroPlayersSince).getTime();
+      const stopAt = startedAt + Number(lastSettings.idleStopMinutes || 0) * 60 * 1000;
+      target.textContent = formatDuration(stopAt - Date.now());
     }
 
     function setBusy(nextBusy, label = '加载中...') {
@@ -140,12 +167,15 @@ export function renderUi() {
       }
       const state = data.state || data;
       if (!state.phase) return;
+      lastState = state;
+      lastSettings = data.settings || lastSettings;
       currentPhase = state.phase || 'unknown';
       document.getElementById('phase').textContent = state.phase || '-';
       document.getElementById('players').textContent = String(state.playerCount ?? '-');
       document.getElementById('runtime').textContent = state.runtimeName || state.runtimeId || '-';
       document.getElementById('updatedAt').textContent = formatTime(state.updatedAt);
       document.getElementById('heartbeatAt').textContent = formatTime(state.lastHeartbeatAt);
+      updateIdleStopEta();
       updateButtons();
     }
 
@@ -178,6 +208,7 @@ export function renderUi() {
     document.getElementById('forceStop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: true }) }, '强制释放中...'));
     load();
     setInterval(load, 15000);
+    setInterval(updateIdleStopEta, 1000);
   </script>
 </body>
 </html>`;
