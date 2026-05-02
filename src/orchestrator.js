@@ -17,7 +17,14 @@ function canStart(state) {
 }
 
 function runtimeReady(payload) {
-  return !payload.rconError && payload.parseStatus === 'matched';
+  if (payload.rconError) return false;
+  if (payload.parseStatus === 'matched') return true;
+
+  // Older runtime images do not send parseStatus. Treat a valid RCON list
+  // response as ready so already-running servers can leave initializing.
+  const raw = String(payload.raw ?? '');
+  return /There are\s+\d+\s+of\s+a\s+max\s+of\s+\d+\s+players\s+online/i.test(raw)
+    || /There are\s+\d+\s*\/\s*\d+\s+players\s+online/i.test(raw);
 }
 
 function gracefulStopAllowed(phase) {
