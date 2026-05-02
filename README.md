@@ -9,7 +9,7 @@ This project runs a small web control plane on a low-cost VPS and creates a high
 - Provides an ECS fallback path for disks that cannot be mounted by ECI.
 - Stops safely through Minecraft RCON: announce, `save-all flush`, `stop`, then release the cloud runtime.
 - Accepts runtime heartbeats with player list, memory, load average, and disk usage.
-- Sends email or webhook alert when zero players remain online for `IDLE_ALERT_MINUTES`.
+- Sends email or webhook alert when zero players remain online for `IDLE_ALERT_MINUTES`, then safely stops after `IDLE_STOP_MINUTES` when `IDLE_AUTO_STOP=true`.
 
 ## Important Storage Decision
 
@@ -75,6 +75,6 @@ Restrict these permissions by region, resource group, and tags where possible.
 ## Operations
 
 - Keep automatic snapshots for the persistent disk before enabling automatic shutdown.
-- Start with `IDLE_AUTO_STOP=false` so the 5-minute empty-server condition only alerts.
-- After several successful manual stops, set `IDLE_AUTO_STOP=true`.
+- Use `IDLE_STOP_MINUTES=10` to control how long a running server may stay empty before safe auto-stop.
+- Set `IDLE_AUTO_STOP=false` temporarily if you want empty-server detection to alert without stopping.
 - If `/data/server-init.sh` is missing or not executable, the runtime container stays alive for manual inspection instead of deleting itself immediately.

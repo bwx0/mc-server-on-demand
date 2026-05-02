@@ -79,7 +79,8 @@ cp .env.example .env
 
 ```env
 RUNTIME_PROVIDER=eci
-IDLE_AUTO_STOP=false
+IDLE_STOP_MINUTES=10
+IDLE_AUTO_STOP=true
 ```
 
 如果预检提示旧云盘不能被 ECI 挂载，再改用：
@@ -129,10 +130,10 @@ https://mcc.dzxyim.top
 2. 点击“启动服务器”，等待 ECI/ECS 创建完成。
 3. 用 Minecraft 客户端连接 `mc.dzxyim.top`。
 4. 至少完成一次“安全停止”，确认世界保存正常。
-5. 稳定后再考虑开启 `IDLE_AUTO_STOP=true`。
+5. 确认安全停止正常；如需临时只告警不自动停服，可设置 `IDLE_AUTO_STOP=false`。
 
 ## 7. 日常使用
 
-每次开服时，访问 `mcc.dzxyim.top` 点击启动即可。大家下线后，系统会在零玩家持续达到 `IDLE_ALERT_MINUTES` 时发送告警；启用 `IDLE_AUTO_STOP=true` 后会自动安全停服并释放计算资源。
+每次开服时，访问 `mcc.dzxyim.top` 点击启动即可。服务器进入 `running` 后，如果零玩家持续达到 `IDLE_ALERT_MINUTES` 会发送告警；持续达到 `IDLE_STOP_MINUTES` 且 `IDLE_AUTO_STOP=true` 时，会自动安全停服并释放计算资源。
 
 遇到启动失败、EIP 绑定失败、RCON 停服失败等问题时，查看 `docs/ops-runbook.md`。

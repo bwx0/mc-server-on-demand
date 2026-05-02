@@ -193,15 +193,17 @@ export class Orchestrator {
     const now = new Date();
     const playerCount = Number(payload.playerCount ?? payload.players?.length ?? 0);
     const players = Array.isArray(payload.players) ? payload.players : [];
-    const nextPhase = runtimeReady(payload) ? 'running' : 'initializing';
+    const ready = runtimeReady(payload);
+    const nextPhase = ready ? 'running' : 'initializing';
 
     const state = await this.store.update((current) => {
-      const zeroPlayersSince = playerCount === 0
+      const phase = ['starting', 'initializing'].includes(current.phase) ? nextPhase : current.phase;
+      const zeroPlayersSince = phase === 'running' && ready && playerCount === 0
         ? current.zeroPlayersSince ?? now.toISOString()
         : null;
       return {
         ...current,
-        phase: ['starting', 'initializing'].includes(current.phase) ? nextPhase : current.phase,
+        phase,
         players,
         playerCount,
         zeroPlayersSince,
@@ -227,21 +229,27 @@ export class Orchestrator {
   async maybeAlertOrStop(state) {
     if (!state.zeroPlayersSince || state.phase !== 'running') return;
     const idleMs = Date.now() - new Date(state.zeroPlayersSince).getTime();
-    const thresholdMs = this.config.runtime.idleAlertMinutes * 60 * 1000;
-    if (idleMs < thresholdMs || state.idleAlertSentAt) return;
+    const alertThresholdMs = this.config.runtime.idleAlertMinutes * 60 * 1000;
+    const stopThresholdMs = this.config.runtime.idleStopMinutes * 60 * 1000;
 
-    try {
-      await this.alerts.sendIdleAlert(state);
-      await this.store.update((current) => ({
-        ...current,
-        idleAlertSentAt: new Date().toISOString(),
-      }));
-      await this.store.event('idle-alert-sent', { playerCount: state.playerCount });
-    } catch (error) {
-      await this.store.event('idle-alert-failed', { error: error.message });
+    if (idleMs >= alertThresholdMs && !state.idleAlertSentAt) {
+      try {
+        await this.alerts.sendIdleAlert(state);
+        await this.store.update((current) => ({
+          ...current,
+          idleAlertSentAt: new Date().toISOString(),
+        }));
+        await this.store.event('idle-alert-sent', { playerCount: state.playerCount });
+      } catch (error) {
+        await this.store.event('idle-alert-failed', { error: error.message });
+      }
     }
 
-    if (this.config.runtime.idleAutoStop) {
+    if (this.config.runtime.idleAutoStop && idleMs >= stopThresholdMs) {
+      await this.store.event('idle-auto-stop-triggered', {
+        idleMinutes: Math.floor(idleMs / 60000),
+        thresholdMinutes: this.config.runtime.idleStopMinutes,
+      });
       await this.stop({ force: false });
     }
   }

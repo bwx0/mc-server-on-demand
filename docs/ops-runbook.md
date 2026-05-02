@@ -5,8 +5,8 @@
 1. Create or select the EIP used by `mc.dzxyim.top`.
 2. Confirm the disk, EIP, vSwitch, security group, and runtime zone are in the same region.
 3. Run `GET /api/preflight` from the web page before the first start.
-4. Start with `IDLE_AUTO_STOP=false` so idle detection only alerts.
-5. Verify a manual safe stop successfully saves the world before enabling automatic stop.
+4. Keep `IDLE_STOP_MINUTES=10` unless you want a shorter or longer empty-server timeout.
+5. Verify a manual safe stop successfully saves the world before relying on automatic stop.
 
 ## Storage Validation
 
@@ -33,7 +33,7 @@ Use forced stop only when the Java process is already dead or RCON is broken and
 
 ## Idle Alerts
 
-The runtime monitor sends a heartbeat every 30 seconds. When `playerCount` remains zero for `IDLE_ALERT_MINUTES`, the control plane sends configured email/webhook alerts. Set `IDLE_AUTO_STOP=true` only after you trust the RCON stop flow.
+The runtime monitor sends a heartbeat every 30 seconds. After the server reaches `running`, a successful RCON `list` response with `playerCount=0` starts the idle timer. The control plane sends configured email/webhook alerts after `IDLE_ALERT_MINUTES`, then safely stops the runtime after `IDLE_STOP_MINUTES` when `IDLE_AUTO_STOP=true`.
 
 ## Manual Failure Handling
 
