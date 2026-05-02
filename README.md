@@ -10,6 +10,7 @@ This project runs a small web control plane on a low-cost VPS and creates a high
 - Stops safely through Minecraft RCON: announce, `save-all flush`, `stop`, then release the cloud runtime.
 - Accepts runtime heartbeats with player list, memory, load average, and disk usage.
 - Sends email or webhook alert when zero players remain online for `IDLE_ALERT_MINUTES`, then safely stops after `IDLE_STOP_MINUTES` when `IDLE_AUTO_STOP=true`.
+- Runtime containers also enforce `IDLE_STOP_MINUTES` locally, so an empty server can stop itself if the control plane is unavailable.
 
 ## Important Storage Decision
 

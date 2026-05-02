@@ -11,7 +11,7 @@ function loadDotEnv(file = path.join(process.cwd(), '.env')) {
     const index = trimmed.indexOf('=');
     if (index === -1) continue;
     const name = trimmed.slice(0, index).trim();
-    const rawValue = trimmed.slice(index + 1).trim();
+    const rawValue = trimmed.slice(index + 1).trim().replace(/\s+#.*$/, '');
     const value = rawValue.replace(/^(['"])(.*)\1$/, '$2');
     if (name && process.env[name] === undefined) {
       process.env[name] = value;
@@ -45,7 +45,7 @@ function numberEnv(name, fallback) {
 function boolEnv(name, fallback = false) {
   const raw = env(name);
   if (raw === undefined) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
 function csvEnv(name, fallback = []) {

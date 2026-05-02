@@ -10,9 +10,13 @@ const RCON_PORT = Number(process.env.MINECRAFT_RCON_PORT || 25575);
 const RCON_PASSWORD = process.env.MINECRAFT_RCON_PASSWORD;
 const INTERVAL_MS = Number(process.env.MONITOR_INTERVAL_MS || 30000);
 const MONITOR_DEBUG = ['1', 'true', 'yes', 'on'].includes(String(process.env.MONITOR_DEBUG || '').toLowerCase());
+const IDLE_AUTO_STOP = !['0', 'false', 'no', 'off'].includes(String(process.env.IDLE_AUTO_STOP ?? 'true').toLowerCase());
+const IDLE_STOP_MS = Number(process.env.IDLE_STOP_MINUTES || 10) * 60 * 1000;
 
 const AUTH = 3;
 const EXEC = 2;
+let zeroPlayersSince = null;
+let localStopStarted = false;
 
 function packet(id, type, body) {
   const payload = Buffer.from(body, 'utf8');
@@ -114,6 +118,35 @@ async function diskUsage(path) {
   }
 }
 
+async function localIdleStop(playerInfo, rconError) {
+  if (!IDLE_AUTO_STOP || localStopStarted || rconError || playerInfo.parseStatus !== 'matched') {
+    if (playerInfo.playerCount > 0) zeroPlayersSince = null;
+    return;
+  }
+
+  if (playerInfo.playerCount > 0) {
+    zeroPlayersSince = null;
+    return;
+  }
+
+  const now = Date.now();
+  zeroPlayersSince ??= now;
+  if (now - zeroPlayersSince < IDLE_STOP_MS) return;
+
+  localStopStarted = true;
+  console.log(JSON.stringify({
+    type: 'local-idle-stop-triggered',
+    idleStopMinutes: IDLE_STOP_MS / 60000,
+    zeroPlayersSince: new Date(zeroPlayersSince).toISOString(),
+    at: new Date().toISOString(),
+  }));
+
+  await rcon('say Server is stopping because no players are online. World will be saved.');
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  await rcon('save-all flush');
+  await rcon('stop');
+}
+
 async function heartbeat() {
   let playerInfo = { playerCount: 0, players: [], raw: null };
   let rconError = null;
@@ -131,6 +164,8 @@ async function heartbeat() {
   } catch (error) {
     rconError = error.message;
   }
+
+  await localIdleStop(playerInfo, rconError);
 
   const payload = {
     ...playerInfo,
