@@ -89,6 +89,7 @@ export function loadConfig() {
       cpu: numberEnv('RUNTIME_CPU', 8),
       memory: numberEnv('RUNTIME_MEMORY_GIB', 16),
       image: required('RUNTIME_IMAGE'),
+      imagePullPolicy: env('RUNTIME_IMAGE_PULL_POLICY', 'Always'),
       command: env('RUNTIME_COMMAND', '/entrypoint.sh'),
       restartPolicy: env('RUNTIME_RESTART_POLICY', 'Never'),
       minecraftPort: numberEnv('MINECRAFT_PORT', 25565),

@@ -83,7 +83,7 @@ export class EciProvider {
       ResourceGroupId: this.config.aliyun.resourceGroupId,
       'Container.1.Name': 'minecraft',
       'Container.1.Image': this.config.runtime.image,
-      'Container.1.ImagePullPolicy': 'IfNotPresent',
+      'Container.1.ImagePullPolicy': this.config.runtime.imagePullPolicy,
       'Container.1.Port.1.Port': this.config.runtime.minecraftPort,
       'Container.1.Port.1.Protocol': 'TCP',
       'Container.1.VolumeMount.1.Name': 'mc-data',

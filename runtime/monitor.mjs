@@ -30,6 +30,23 @@ let lastPromPushAt = 0;
 let lastCpuSample = null;
 const playerJoinedAt = new Map();
 
+console.log(JSON.stringify({
+  type: 'monitor-start',
+  version: '2026-05-03-prometheus-push-v2',
+  controlPlaneEnabled: Boolean(CONTROL_PLANE_URL && RUNTIME_TOKEN),
+  monitorIntervalMs: INTERVAL_MS,
+  monitorDebug: MONITOR_DEBUG,
+  idleAutoStop: IDLE_AUTO_STOP,
+  idleStopMinutes: IDLE_STOP_MS / 60000,
+  promPushEnabled: Boolean(PROM_PUSHGATEWAY_URL),
+  promPushIntervalMs: PROM_PUSH_INTERVAL_MS,
+  promPushMethod: PROM_PUSH_METHOD,
+  promJob: PROM_JOB,
+  promInstance: PROM_INSTANCE,
+  promServerLabel: PROM_SERVER_LABEL,
+  at: new Date().toISOString(),
+}));
+
 function packet(id, type, body) {
   const payload = Buffer.from(body, 'utf8');
   const out = Buffer.alloc(4 + 4 + 4 + payload.length + 2);
@@ -378,7 +395,16 @@ function pushGatewayUrl() {
 
 async function pushPrometheus(payload) {
   const url = pushGatewayUrl();
-  if (!url) return;
+  if (!url) {
+    if (MONITOR_DEBUG) {
+      console.log(JSON.stringify({
+        type: 'pushgateway-disabled',
+        reason: 'PROM_PUSHGATEWAY_URL is empty',
+        at: payload.at,
+      }));
+    }
+    return;
+  }
   const response = await fetch(url, {
     method: PROM_PUSH_METHOD,
     headers: {
