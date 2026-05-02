@@ -12,6 +12,10 @@ function terminalPhase(phase) {
   return ['stopped', 'failed'].includes(phase);
 }
 
+function canStart(state) {
+  return state.phase === 'stopped' || (state.phase === 'failed' && !state.runtimeId);
+}
+
 export class Orchestrator {
   constructor(config, pop, store) {
     this.config = config;
@@ -64,7 +68,7 @@ export class Orchestrator {
   async start() {
     return this.withLock('start', async () => {
       const existing = await this.store.read();
-      if (!terminalPhase(existing.phase)) {
+      if (!canStart(existing)) {
         return { idempotent: true, state: existing };
       }
 
@@ -130,11 +134,11 @@ export class Orchestrator {
   async stop({ force = false } = {}) {
     return this.withLock('stop', async () => {
       const current = await this.store.read();
-      if (terminalPhase(current.phase) || !current.runtimeId) {
+      if (!current.runtimeId || (!force && terminalPhase(current.phase))) {
         return { idempotent: true, state: current };
       }
 
-      await this.store.update((state) => ({ ...state, phase: 'stopping' }));
+      await this.store.update((state) => ({ ...state, phase: force ? 'force-stopping' : 'stopping' }));
       await this.store.event('stop-requested', { force });
 
       const rconErrors = [];
@@ -158,7 +162,8 @@ export class Orchestrator {
       }
 
       try {
-        await this.provider(current.provider).deleteRuntime(current.runtimeId);
+        const providerName = current.provider ?? this.config.runtime.provider;
+        await this.provider(providerName).deleteRuntime(current.runtimeId);
         const state = await this.store.reset({
           phase: 'stopped',
           provider: null,
@@ -166,7 +171,7 @@ export class Orchestrator {
           runtimeName: null,
           eipAddress: this.config.aliyun.eipAddress,
         });
-        await this.store.event('runtime-deleted', { runtimeId: current.runtimeId });
+        await this.store.event('runtime-deleted', { runtimeId: current.runtimeId, force });
         return { state };
       } catch (error) {
         const state = await this.store.update((next) => ({

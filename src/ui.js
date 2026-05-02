@@ -20,6 +20,10 @@ export function renderUi() {
     .label { color: #777; font-size: 13px; }
     .value { font-size: 24px; font-weight: 700; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+    .status-line { display: flex; gap: 14px; flex-wrap: wrap; color: #777; font-size: 14px; margin: 8px 0 12px; }
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(127,127,127,.35); border-top-color: currentColor; border-radius: 50%; animation: spin .8s linear infinite; display: none; }
+    .busy .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -46,19 +50,51 @@ export function renderUi() {
   </section>
 
   <section class="row">
-    <button class="primary" id="start">启动服务器</button>
-    <button class="danger" id="stop">安全停止</button>
-    <button class="danger" id="forceStop">强制释放</button>
-    <button id="preflight">预检</button>
+    <button class="primary action" id="start">启动服务器</button>
+    <button class="danger action" id="stop">安全停止</button>
+    <button class="danger action" id="forceStop">强制释放</button>
+    <button class="action" id="preflight">预检</button>
   </section>
 
   <h2>详情</h2>
+  <div class="status-line" id="statusLine">
+    <span class="spinner" aria-hidden="true"></span>
+    <span id="busyText">空闲</span>
+    <span>状态更新时间：<span id="updatedAt">-</span></span>
+    <span>最近心跳：<span id="heartbeatAt">-</span></span>
+  </div>
   <pre id="output">Loading...</pre>
 
   <script>
     const tokenInput = document.getElementById('token');
     const output = document.getElementById('output');
+    const statusLine = document.getElementById('statusLine');
+    const busyText = document.getElementById('busyText');
+    const actionButtons = Array.from(document.querySelectorAll('button.action'));
+    let busy = false;
+    let currentPhase = 'unknown';
     tokenInput.value = localStorage.getItem('controlToken') || '';
+
+    function formatTime(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString();
+    }
+
+    function setBusy(nextBusy, label = '加载中...') {
+      busy = nextBusy;
+      statusLine.classList.toggle('busy', busy);
+      busyText.textContent = busy ? label : '空闲';
+      updateButtons();
+    }
+
+    function updateButtons() {
+      const lifecycleBusy = ['starting', 'stopping', 'force-stopping'].includes(currentPhase);
+      for (const button of actionButtons) {
+        button.disabled = busy || lifecycleBusy;
+      }
+    }
 
     function headers() {
       return {
@@ -67,23 +103,42 @@ export function renderUi() {
       };
     }
 
-    async function request(path, options = {}) {
-      const response = await fetch(path, { ...options, headers: headers() });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || response.statusText);
-      return body;
+    async function request(path, options = {}, label = '加载中...') {
+      setBusy(true, label);
+      try {
+        const response = await fetch(path, { ...options, headers: headers() });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || response.statusText);
+        return body;
+      } finally {
+        setBusy(false);
+      }
     }
 
     function show(data) {
       output.textContent = JSON.stringify(data, null, 2);
       const state = data.state || data;
+      if (!state.phase) return;
+      currentPhase = state.phase || 'unknown';
       document.getElementById('phase').textContent = state.phase || '-';
       document.getElementById('players').textContent = String(state.playerCount ?? '-');
       document.getElementById('runtime').textContent = state.runtimeName || state.runtimeId || '-';
+      document.getElementById('updatedAt').textContent = formatTime(state.updatedAt);
+      document.getElementById('heartbeatAt').textContent = formatTime(state.lastHeartbeatAt);
+      updateButtons();
+    }
+
+    async function runAction(fn) {
+      try {
+        show(await fn());
+      } catch (error) {
+        output.textContent = error.message;
+      }
     }
 
     async function load() {
-      try { show(await request('/api/status')); }
+      if (busy) return;
+      try { show(await request('/api/status', {}, '刷新状态中...')); }
       catch (error) { output.textContent = error.message; }
     }
 
@@ -92,10 +147,10 @@ export function renderUi() {
       load();
     };
     document.getElementById('refresh').onclick = load;
-    document.getElementById('preflight').onclick = async () => show(await request('/api/preflight'));
-    document.getElementById('start').onclick = async () => show(await request('/api/start', { method: 'POST', body: '{}' }));
-    document.getElementById('stop').onclick = async () => show(await request('/api/stop', { method: 'POST', body: JSON.stringify({ force: false }) }));
-    document.getElementById('forceStop').onclick = async () => show(await request('/api/stop', { method: 'POST', body: JSON.stringify({ force: true }) }));
+    document.getElementById('preflight').onclick = () => runAction(() => request('/api/preflight', {}, '预检中...'));
+    document.getElementById('start').onclick = () => runAction(() => request('/api/start', { method: 'POST', body: '{}' }, '启动中...'));
+    document.getElementById('stop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: false }) }, '安全停止中...'));
+    document.getElementById('forceStop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: true }) }, '强制释放中...'));
     load();
     setInterval(load, 15000);
   </script>
