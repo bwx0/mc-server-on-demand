@@ -45,10 +45,12 @@ function promEnvParams(config, startIndex) {
     [`Container.1.EnvironmentVar.${startIndex}.Value`]: config.runtime.promPushgatewayUrl,
     [`Container.1.EnvironmentVar.${startIndex + 1}.Key`]: 'PROM_PUSH_INTERVAL_MS',
     [`Container.1.EnvironmentVar.${startIndex + 1}.Value`]: String(config.runtime.promPushIntervalMs),
-    [`Container.1.EnvironmentVar.${startIndex + 2}.Key`]: 'PROM_JOB',
-    [`Container.1.EnvironmentVar.${startIndex + 2}.Value`]: config.runtime.promJob,
-    [`Container.1.EnvironmentVar.${startIndex + 3}.Key`]: 'PROM_SERVER_LABEL',
-    [`Container.1.EnvironmentVar.${startIndex + 3}.Value`]: config.runtime.promServerLabel,
+    [`Container.1.EnvironmentVar.${startIndex + 2}.Key`]: 'PROM_PUSH_METHOD',
+    [`Container.1.EnvironmentVar.${startIndex + 2}.Value`]: config.runtime.promPushMethod,
+    [`Container.1.EnvironmentVar.${startIndex + 3}.Key`]: 'PROM_JOB',
+    [`Container.1.EnvironmentVar.${startIndex + 3}.Value`]: config.runtime.promJob,
+    [`Container.1.EnvironmentVar.${startIndex + 4}.Key`]: 'PROM_SERVER_LABEL',
+    [`Container.1.EnvironmentVar.${startIndex + 4}.Value`]: config.runtime.promServerLabel,
   };
 }
 

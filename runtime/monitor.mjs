@@ -15,6 +15,7 @@ const IDLE_STOP_MS = Number(process.env.IDLE_STOP_MINUTES || 10) * 60 * 1000;
 const LOCAL_STOP_EXIT_GRACE_MS = Number(process.env.LOCAL_STOP_EXIT_GRACE_SECONDS || 60) * 1000;
 const PROM_PUSHGATEWAY_URL = process.env.PROM_PUSHGATEWAY_URL;
 const PROM_PUSH_INTERVAL_MS = Number(process.env.PROM_PUSH_INTERVAL_MS || 10000);
+const PROM_PUSH_METHOD = process.env.PROM_PUSH_METHOD || 'POST';
 const PROM_JOB = process.env.PROM_JOB || 'minecraft';
 const PROM_INSTANCE = process.env.PROM_INSTANCE || os.hostname();
 const PROM_SERVER_LABEL = process.env.PROM_SERVER_LABEL || 'mc';
@@ -379,19 +380,21 @@ async function pushPrometheus(payload) {
   const url = pushGatewayUrl();
   if (!url) return;
   const response = await fetch(url, {
-    method: 'PUT',
+    method: PROM_PUSH_METHOD,
     headers: {
       'content-type': 'text/plain; version=0.0.4; charset=utf-8',
     },
     body: prometheusText(payload),
   });
   if (!response.ok) {
-    throw new Error(`pushgateway failed: ${response.status} ${response.statusText}`);
+    const text = await response.text().catch(() => '');
+    throw new Error(`pushgateway failed: ${response.status} ${response.statusText} ${text}`);
   }
   if (MONITOR_DEBUG) {
     console.log(JSON.stringify({
       type: 'pushgateway-ok',
       url,
+      method: PROM_PUSH_METHOD,
       playerCount: payload.playerCount,
       at: payload.at,
     }));
@@ -403,12 +406,20 @@ for (;;) {
     const now = Date.now();
     const payload = await collectPayload();
     if (now - lastPromPushAt >= PROM_PUSH_INTERVAL_MS) {
-      await pushPrometheus(payload);
-      lastPromPushAt = now;
+      try {
+        await pushPrometheus(payload);
+        lastPromPushAt = now;
+      } catch (error) {
+        console.error(error.message);
+      }
     }
     if (now - lastControlHeartbeatAt >= INTERVAL_MS) {
-      await heartbeat(payload);
-      lastControlHeartbeatAt = now;
+      try {
+        await heartbeat(payload);
+        lastControlHeartbeatAt = now;
+      } catch (error) {
+        console.error(error.message);
+      }
     }
   } catch (error) {
     console.error(error.message);

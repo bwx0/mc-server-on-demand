@@ -104,6 +104,7 @@ export function loadConfig() {
       monitorDebug: boolEnv('MONITOR_DEBUG', false),
       promPushgatewayUrl: env('PROM_PUSHGATEWAY_URL'),
       promPushIntervalMs: numberEnv('PROM_PUSH_INTERVAL_MS', 10000),
+      promPushMethod: env('PROM_PUSH_METHOD', 'POST'),
       promJob: env('PROM_JOB', 'minecraft'),
       promServerLabel: env('PROM_SERVER_LABEL', 'mc'),
     },
