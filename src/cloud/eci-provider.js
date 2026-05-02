@@ -38,6 +38,15 @@ function commandParams(command) {
   };
 }
 
+function isNotFound(error) {
+  const message = String(error?.message ?? '');
+  const code = String(error?.code ?? error?.Code ?? '');
+  return code.includes('NotFound')
+    || code.includes('NotExist')
+    || message.includes('does not exist')
+    || message.includes('ContainerGroupId');
+}
+
 export class EciProvider {
   constructor(config, pop) {
     this.config = config;
@@ -94,17 +103,32 @@ export class EciProvider {
 
   async describeRuntime(runtimeId) {
     if (!runtimeId) return null;
-    const response = await this.pop.eci('DescribeContainerGroups', {
-      ContainerGroupIds: JSON.stringify([runtimeId]),
-    });
+    let response;
+    try {
+      response = await this.pop.eci('DescribeContainerGroups', {
+        ContainerGroupIds: JSON.stringify([runtimeId]),
+      });
+    } catch (error) {
+      if (isNotFound(error)) {
+        return { missing: true, runtimeId };
+      }
+      throw error;
+    }
     const groups = response.ContainerGroups?.ContainerGroup ?? [];
     return Array.isArray(groups) ? groups[0] ?? null : groups;
   }
 
   async deleteRuntime(runtimeId) {
     if (!runtimeId) return null;
-    return this.pop.eci('DeleteContainerGroup', {
-      ContainerGroupId: runtimeId,
-    });
+    try {
+      return await this.pop.eci('DeleteContainerGroup', {
+        ContainerGroupId: runtimeId,
+      });
+    } catch (error) {
+      if (isNotFound(error)) {
+        return { missing: true, runtimeId };
+      }
+      throw error;
+    }
   }
 }

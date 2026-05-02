@@ -69,6 +69,21 @@ export class Orchestrator {
     if (state.runtimeId && state.provider) {
       try {
         cloud = await this.provider(state.provider).describeRuntime(state.runtimeId);
+        if (cloud?.missing) {
+          await this.store.event('runtime-already-gone', {
+            runtimeId: state.runtimeId,
+            provider: state.provider,
+            during: 'status',
+          });
+          const stopped = await this.store.reset({
+            phase: 'stopped',
+            provider: null,
+            runtimeId: null,
+            runtimeName: null,
+            eipAddress: this.config.aliyun.eipAddress,
+          });
+          return { state: stopped, cloud };
+        }
       } catch (error) {
         cloud = { error: error.message };
       }
@@ -185,7 +200,7 @@ export class Orchestrator {
 
       try {
         const providerName = current.provider ?? this.config.runtime.provider;
-        await this.provider(providerName).deleteRuntime(current.runtimeId);
+        const deleted = await this.provider(providerName).deleteRuntime(current.runtimeId);
         const state = await this.store.reset({
           phase: 'stopped',
           provider: null,
@@ -193,7 +208,12 @@ export class Orchestrator {
           runtimeName: null,
           eipAddress: this.config.aliyun.eipAddress,
         });
-        await this.store.event('runtime-deleted', { runtimeId: current.runtimeId, force });
+        await this.store.event(deleted?.missing ? 'runtime-already-gone' : 'runtime-deleted', {
+          runtimeId: current.runtimeId,
+          provider: providerName,
+          force,
+          during: 'stop',
+        });
         return { state };
       } catch (error) {
         const state = await this.store.update((next) => ({
