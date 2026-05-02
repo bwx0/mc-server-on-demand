@@ -28,6 +28,7 @@ let localStopStarted = false;
 let lastControlHeartbeatAt = 0;
 let lastPromPushAt = 0;
 let lastCpuSample = null;
+let lastProcessCpuSample = null;
 const playerJoinedAt = new Map();
 
 console.log(JSON.stringify({
@@ -185,6 +186,18 @@ async function cgroupCpuUsageCores() {
   return wallDeltaMs > 0 ? usageDeltaMs / wallDeltaMs : null;
 }
 
+function processCpuUsageCores() {
+  const usage = process.cpuUsage();
+  const usageUsec = usage.user + usage.system;
+  const now = Date.now();
+  const previous = lastProcessCpuSample;
+  lastProcessCpuSample = { usageUsec, at: now };
+  if (!previous) return null;
+  const usageDeltaMs = (usageUsec - previous.usageUsec) / 1000;
+  const wallDeltaMs = now - previous.at;
+  return wallDeltaMs > 0 ? usageDeltaMs / wallDeltaMs : null;
+}
+
 async function networkUsage() {
   const raw = await readText('/proc/net/dev');
   if (!raw) return null;
@@ -293,6 +306,7 @@ async function collectPayload() {
     disk: await diskUsage('/data'),
     cgroupMemory: await cgroupMemory(),
     cpuUsageCores: await cgroupCpuUsageCores(),
+    processCpuUsageCores: processCpuUsageCores(),
     network: await networkUsage(),
     at: new Date().toISOString(),
   };
@@ -366,6 +380,8 @@ function prometheusText(payload) {
     metricLine('minecraft_container_memory_limit_bytes', payload.cgroupMemory?.maxBytes, {}),
     '# TYPE minecraft_container_cpu_usage_cores gauge',
     metricLine('minecraft_container_cpu_usage_cores', payload.cpuUsageCores, {}),
+    '# TYPE minecraft_process_cpu_usage_cores gauge',
+    metricLine('minecraft_process_cpu_usage_cores', payload.processCpuUsageCores, {}),
     '# TYPE minecraft_container_network_receive_bytes_total counter',
     metricLine('minecraft_container_network_receive_bytes_total', payload.network?.receiveBytes, {}),
     '# TYPE minecraft_container_network_transmit_bytes_total counter',

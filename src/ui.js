@@ -137,6 +137,10 @@ export function renderUi() {
       return scaled.toFixed(unit === 0 ? 0 : 1) + ' ' + units[unit];
     }
 
+    function formatAxisTime(value) {
+      return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
     function latest(series) {
       return series?.length ? series[series.length - 1].v : null;
     }
@@ -185,9 +189,26 @@ export function renderUi() {
           trigger: 'axis',
           valueFormatter: (value) => String(formatter(value)),
         },
-        grid: { left: 38, right: 12, top: 16, bottom: 42 },
-        xAxis: { type: 'time' },
-        yAxis: { type: 'value', scale: true },
+        grid: { left: 50, right: 16, top: 16, bottom: 48 },
+        xAxis: {
+          type: 'time',
+          axisLabel: {
+            formatter: formatAxisTime,
+            hideOverlap: true,
+            interval: 'auto',
+          },
+          splitNumber: 3,
+        },
+        yAxis: {
+          type: 'value',
+          scale: true,
+          axisLabel: {
+            formatter: (value) => String(formatter(value)).replace('/s', ''),
+            width: 44,
+            overflow: 'truncate',
+          },
+          splitNumber: 3,
+        },
         dataZoom: [
           { type: 'inside' },
           { type: 'slider', height: 18, bottom: 8 },
@@ -214,6 +235,7 @@ export function renderUi() {
 
     function renderMetrics(data) {
       const metrics = data.metrics;
+      const admin = currentRole === 'admin';
       if (!metrics?.enabled) {
         disposeCharts();
         charts.innerHTML = '<div class="card">' + (metrics?.message || '监控未配置') + '</div>';
@@ -227,17 +249,17 @@ export function renderUi() {
           echartCard('chartMemory', '内存使用率', latest(metrics.series.memoryPercent), (v) => Number(v ?? 0).toFixed(1) + '%'),
           echartCard('chartRx', '接收流量', latest(metrics.series.networkRxBps), formatBytes),
           echartCard('chartTx', '发送流量', latest(metrics.series.networkTxBps), formatBytes),
-          echartCard('chartIdle', '空服时长', metrics.stats.idleSeconds, formatSeconds),
+          admin ? echartCard('chartIdle', '空服时长', metrics.stats.idleSeconds, formatSeconds) : '',
           '<div class="card"><div class="label">Uptime</div><div class="metric-big">' + formatSeconds(metrics.stats.uptimeSeconds) + '</div></div>',
           '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
-          '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>',
+          admin ? '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>' : '',
         ].join('');
         drawLineChart('chartPlayers', '在线人数', metrics.series.playersOnline, (v) => v);
         drawLineChart('chartCpu', 'CPU 使用（核）', metrics.series.cpuCores, (v) => Number(v).toFixed(2));
         drawLineChart('chartMemory', '内存使用率', metrics.series.memoryPercent, (v) => Number(v).toFixed(1) + '%');
         drawLineChart('chartRx', '接收流量', metrics.series.networkRxBps, formatBytes);
         drawLineChart('chartTx', '发送流量', metrics.series.networkTxBps, formatBytes);
-        drawLineChart('chartIdle', '空服时长', metrics.series.idleSeconds, formatSeconds);
+        if (admin) drawLineChart('chartIdle', '空服时长', metrics.series.idleSeconds, formatSeconds);
         return;
       }
       disposeCharts();
@@ -247,10 +269,10 @@ export function renderUi() {
         chartCard('内存使用率', latest(metrics.series.memoryPercent), metrics.series.memoryPercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
         chartCard('接收流量', latest(metrics.series.networkRxBps), metrics.series.networkRxBps, formatBytes),
         chartCard('发送流量', latest(metrics.series.networkTxBps), metrics.series.networkTxBps, formatBytes),
-        chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds),
+        admin ? chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds) : '',
         '<div class="card"><div class="label">Uptime</div><div class="metric-big">' + formatSeconds(metrics.stats.uptimeSeconds) + '</div></div>',
         '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
-        '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>',
+        admin ? '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>' : '',
       ].join('');
     }
 

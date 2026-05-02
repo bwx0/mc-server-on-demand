@@ -101,7 +101,7 @@ export class PrometheusClient {
       rconUp: `minecraft_rcon_up${selector}`,
       idleSeconds: `minecraft_idle_seconds${selector}`,
       uptimeSeconds: `minecraft_runtime_uptime_seconds${selector}`,
-      cpuCores: `minecraft_container_cpu_usage_cores${selector}`,
+      cpuCores: `minecraft_container_cpu_usage_cores${selector} or minecraft_process_cpu_usage_cores${selector}`,
       memoryPercent: `100 * minecraft_container_memory_usage_bytes${selector} / minecraft_container_memory_limit_bytes${selector}`,
       networkRxBps: `rate(minecraft_container_network_receive_bytes_total${selector}[1m])`,
       networkTxBps: `rate(minecraft_container_network_transmit_bytes_total${selector}[1m])`,
