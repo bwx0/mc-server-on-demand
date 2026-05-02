@@ -29,6 +29,54 @@ function send(res, status, body, headers = {}) {
   res.end(payload);
 }
 
+function clientIp(req) {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress;
+}
+
+function auditBase(req, action, details = {}) {
+  return {
+    action,
+    role: req.controlRole ?? 'unknown',
+    method: req.method,
+    path: req.url,
+    ip: clientIp(req),
+    userAgent: req.headers['user-agent'],
+    ...details,
+  };
+}
+
+function resultSummary(result) {
+  return {
+    idempotent: result?.idempotent,
+    phase: result?.state?.phase,
+    runtimeId: result?.state?.runtimeId ?? result?.runtime?.runtimeId,
+    runtimeName: result?.state?.runtimeName ?? result?.runtime?.runtimeName,
+  };
+}
+
+async function auditedPageOperation(req, action, details, fn) {
+  await store.audit('page-operation-start', auditBase(req, action, details));
+  try {
+    const result = await fn();
+    await store.audit('page-operation-complete', auditBase(req, action, {
+      ...details,
+      result: resultSummary(result),
+    }));
+    return result;
+  } catch (error) {
+    await store.audit('page-operation-failed', auditBase(req, action, {
+      ...details,
+      error: error.message,
+      status: error.status ?? 500,
+    }));
+    throw error;
+  }
+}
+
 function publicState(state) {
   if (!state) return state;
   return {
@@ -132,17 +180,23 @@ async function route(req, res) {
   }
 
   if (url.pathname === '/api/preflight' && req.method === 'GET') {
-    requireAdmin(req);
-    return send(res, 200, { role, ...(await orchestrator.preflight()) });
+    const result = await auditedPageOperation(req, 'preflight', {}, async () => {
+      requireAdmin(req);
+      return orchestrator.preflight();
+    });
+    return send(res, 200, { role, ...result });
   }
 
   if (url.pathname === '/api/start' && req.method === 'POST') {
-    return send(res, 200, responseForRole(await orchestrator.start(), role));
+    const result = await auditedPageOperation(req, 'start', {}, () => orchestrator.start());
+    return send(res, 200, responseForRole(result, role));
   }
 
   if (url.pathname === '/api/stop' && req.method === 'POST') {
     const body = await readJson(req);
-    return send(res, 200, responseForRole(await orchestrator.stop({ force: body.force === true }), role));
+    const force = body.force === true;
+    const result = await auditedPageOperation(req, force ? 'force-stop' : 'graceful-stop', { force }, () => orchestrator.stop({ force }));
+    return send(res, 200, responseForRole(result, role));
   }
 
   return send(res, 404, { error: 'Not found' });
@@ -151,6 +205,12 @@ async function route(req, res) {
 const server = http.createServer((req, res) => {
   route(req, res).catch((error) => {
     const status = error.status || 500;
+    if (req.url?.startsWith('/api/') && req.url !== '/api/runtime/heartbeat') {
+      store.audit('page-operation-error', auditBase(req, 'request', {
+        error: error.message,
+        status,
+      })).catch((auditError) => console.error(`audit failed: ${auditError.message}`));
+    }
     send(res, status, {
       error: error.message,
       state: req.controlRole === 'user' ? publicState(error.state) : error.state,

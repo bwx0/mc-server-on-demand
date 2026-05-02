@@ -59,6 +59,14 @@ export class StateStore {
   }
 
   async event(type, details = {}) {
+    const entry = await this.audit(type, details);
+    return this.update((state) => ({
+      ...state,
+      events: [entry, ...(state.events ?? [])],
+    }));
+  }
+
+  async audit(type, details = {}) {
     const entry = {
       type,
       details,
@@ -66,9 +74,7 @@ export class StateStore {
     };
     await fs.mkdir(path.dirname(this.auditFile), { recursive: true });
     await fs.appendFile(this.auditFile, `${JSON.stringify(entry)}\n`);
-    return this.update((state) => ({
-      ...state,
-      events: [entry, ...(state.events ?? [])],
-    }));
+    console.log(JSON.stringify(entry));
+    return entry;
   }
 }
