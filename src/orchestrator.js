@@ -20,6 +20,10 @@ function runtimeReady(payload) {
   return !payload.rconError && payload.parseStatus === 'matched';
 }
 
+function gracefulStopAllowed(phase) {
+  return !['starting', 'initializing'].includes(phase);
+}
+
 export class Orchestrator {
   constructor(config, pop, store) {
     this.config = config;
@@ -140,6 +144,13 @@ export class Orchestrator {
       const current = await this.store.read();
       if (!current.runtimeId || (!force && terminalPhase(current.phase))) {
         return { idempotent: true, state: current };
+      }
+      if (!force && !gracefulStopAllowed(current.phase)) {
+        return {
+          idempotent: true,
+          state: current,
+          message: `Graceful stop is disabled while server is ${current.phase}. Use force stop if the runtime must be deleted.`,
+        };
       }
 
       await this.store.update((state) => ({ ...state, phase: force ? 'force-stopping' : 'stopping' }));

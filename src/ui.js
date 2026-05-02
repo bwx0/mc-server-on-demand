@@ -91,10 +91,12 @@ export function renderUi() {
 
     function updateButtons() {
       const lifecycleBusy = ['starting', 'stopping', 'force-stopping'].includes(currentPhase);
+      const startupPhase = ['starting', 'initializing'].includes(currentPhase);
       for (const button of actionButtons) {
         button.disabled = busy || lifecycleBusy;
       }
       document.getElementById('start').disabled = busy || lifecycleBusy || currentPhase === 'initializing' || currentPhase === 'running';
+      document.getElementById('stop').disabled = busy || lifecycleBusy || startupPhase;
     }
 
     function headers() {
