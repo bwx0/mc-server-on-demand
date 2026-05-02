@@ -29,6 +29,7 @@ let lastControlHeartbeatAt = 0;
 let lastPromPushAt = 0;
 let lastCpuSample = null;
 let lastProcessCpuSample = null;
+let lastJavaCpuSample = null;
 const playerJoinedAt = new Map();
 
 console.log(JSON.stringify({
@@ -172,14 +173,47 @@ async function cgroupMemory() {
 }
 
 async function cgroupCpuUsageCores() {
-  const raw = await readText('/sys/fs/cgroup/cpu.stat');
-  if (!raw) return null;
-  const usageLine = raw.split('\n').find((line) => line.startsWith('usage_usec '));
-  if (!usageLine) return null;
-  const usageUsec = Number(usageLine.split(/\s+/)[1]);
+  const v2Raw = await readText('/sys/fs/cgroup/cpu.stat');
+  const v2UsageLine = v2Raw?.split('\n').find((line) => line.startsWith('usage_usec '));
+  const v1Raw = v2UsageLine ? null : await readText('/sys/fs/cgroup/cpuacct/cpuacct.usage');
+  const usageUsec = v2UsageLine
+    ? Number(v2UsageLine.split(/\s+/)[1])
+    : Number(v1Raw?.trim()) / 1000;
+  if (!Number.isFinite(usageUsec)) return null;
   const now = Date.now();
   const previous = lastCpuSample;
   lastCpuSample = { usageUsec, at: now };
+  if (!previous) return null;
+  const usageDeltaMs = (usageUsec - previous.usageUsec) / 1000;
+  const wallDeltaMs = now - previous.at;
+  return wallDeltaMs > 0 ? usageDeltaMs / wallDeltaMs : null;
+}
+
+async function javaCpuUsageCores() {
+  const entries = await fs.readdir('/proc', { withFileTypes: true }).catch(() => []);
+  const javaPids = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+    const command = await readText(`/proc/${entry.name}/comm`);
+    if (command?.trim().toLowerCase().includes('java')) {
+      javaPids.push(entry.name);
+    }
+  }
+  if (javaPids.length === 0) return null;
+
+  const ticksPerSecond = Number(process.env.CLK_TCK || 100);
+  let totalTicks = 0;
+  for (const pid of javaPids) {
+    const stat = await readText(`/proc/${pid}/stat`);
+    const end = stat?.lastIndexOf(')');
+    if (!stat || end === -1) continue;
+    const fields = stat.slice(end + 2).trim().split(/\s+/);
+    totalTicks += Number(fields[11] || 0) + Number(fields[12] || 0);
+  }
+  const usageUsec = totalTicks / ticksPerSecond * 1_000_000;
+  const now = Date.now();
+  const previous = lastJavaCpuSample;
+  lastJavaCpuSample = { usageUsec, at: now };
   if (!previous) return null;
   const usageDeltaMs = (usageUsec - previous.usageUsec) / 1000;
   const wallDeltaMs = now - previous.at;
@@ -306,6 +340,7 @@ async function collectPayload() {
     disk: await diskUsage('/data'),
     cgroupMemory: await cgroupMemory(),
     cpuUsageCores: await cgroupCpuUsageCores(),
+    javaCpuUsageCores: await javaCpuUsageCores(),
     processCpuUsageCores: processCpuUsageCores(),
     network: await networkUsage(),
     at: new Date().toISOString(),
@@ -380,6 +415,8 @@ function prometheusText(payload) {
     metricLine('minecraft_container_memory_limit_bytes', payload.cgroupMemory?.maxBytes, {}),
     '# TYPE minecraft_container_cpu_usage_cores gauge',
     metricLine('minecraft_container_cpu_usage_cores', payload.cpuUsageCores, {}),
+    '# TYPE minecraft_java_cpu_usage_cores gauge',
+    metricLine('minecraft_java_cpu_usage_cores', payload.javaCpuUsageCores, {}),
     '# TYPE minecraft_process_cpu_usage_cores gauge',
     metricLine('minecraft_process_cpu_usage_cores', payload.processCpuUsageCores, {}),
     '# TYPE minecraft_container_network_receive_bytes_total counter',

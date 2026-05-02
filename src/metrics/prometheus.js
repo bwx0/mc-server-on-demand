@@ -101,11 +101,12 @@ export class PrometheusClient {
       rconUp: `minecraft_rcon_up${selector}`,
       idleSeconds: `minecraft_idle_seconds${selector}`,
       uptimeSeconds: `minecraft_runtime_uptime_seconds${selector}`,
-      cpuCores: `minecraft_container_cpu_usage_cores${selector} or minecraft_process_cpu_usage_cores${selector}`,
+      cpuCores: `minecraft_container_cpu_usage_cores${selector} or minecraft_java_cpu_usage_cores${selector} or minecraft_process_cpu_usage_cores${selector}`,
       memoryPercent: `100 * minecraft_container_memory_usage_bytes${selector} / minecraft_container_memory_limit_bytes${selector}`,
       networkRxBps: `rate(minecraft_container_network_receive_bytes_total${selector}[1m])`,
       networkTxBps: `rate(minecraft_container_network_transmit_bytes_total${selector}[1m])`,
       playerSessions: `minecraft_player_session_seconds${selector}`,
+      playerDuration7d: `sum by (player) (sum_over_time(minecraft_player_online${selector}[${this.config.prometheus.playerRangeDays}d]) * ${this.config.runtime.promPushIntervalMs / 1000})`,
     };
 
     const [
@@ -120,6 +121,7 @@ export class PrometheusClient {
       idleNow,
       uptimeNow,
       playerSessionsNow,
+      playerDuration7d,
     ] = await Promise.all([
       this.queryRange(queries.playersOnline, start, end, step),
       this.queryRange(queries.cpuCores, start, end, step),
@@ -132,11 +134,13 @@ export class PrometheusClient {
       this.query(queries.idleSeconds),
       this.query(queries.uptimeSeconds),
       this.query(queries.playerSessions),
+      this.query(queries.playerDuration7d),
     ]);
 
     return {
       enabled: true,
       range: { start, end, step },
+      playerRange: { days: this.config.prometheus.playerRangeDays },
       stats: {
         playersOnline: latestValue(onlineNow),
         rconUp: latestValue(rconNow),
@@ -155,6 +159,10 @@ export class PrometheusClient {
         name: item.metric.player ?? 'unknown',
         sessionSeconds: item.value,
       })).sort((a, b) => b.sessionSeconds - a.sessionSeconds),
+      playerDurations: vectorValues(playerDuration7d).map((item) => ({
+        name: item.metric.player ?? 'unknown',
+        seconds: item.value,
+      })).sort((a, b) => b.seconds - a.seconds),
     };
   }
 }

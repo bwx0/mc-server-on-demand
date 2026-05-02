@@ -227,10 +227,11 @@ export function renderUi() {
 
     function renderPlayerRows(players) {
       if (!players?.length) return '<div class="label">当前没有在线玩家</div>';
-      const max = Math.max(...players.map((player) => player.sessionSeconds), 1);
+      const max = Math.max(...players.map((player) => player.sessionSeconds ?? player.seconds), 1);
       return players.map((player) => {
-        const width = Math.max(3, player.sessionSeconds / max * 100);
-        return '<div class="player-row"><div>' + player.name + '</div><div class="bar"><span style="width:' + width + '%"></span></div><div>' + formatSeconds(player.sessionSeconds) + '</div></div>';
+        const seconds = player.sessionSeconds ?? player.seconds;
+        const width = Math.max(3, seconds / max * 100);
+        return '<div class="player-row"><div>' + player.name + '</div><div class="bar"><span style="width:' + width + '%"></span></div><div>' + formatSeconds(seconds) + '</div></div>';
       }).join('');
     }
 
@@ -253,7 +254,7 @@ export function renderUi() {
           admin ? echartCard('chartIdle', '空服时长', metrics.stats.idleSeconds, formatSeconds) : '',
           '<div class="card"><div class="label">Uptime</div><div class="metric-big">' + formatSeconds(metrics.stats.uptimeSeconds) + '</div></div>',
           '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
-          admin ? '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>' : '',
+          admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
         ].join('');
         if (admin) drawLineChart('chartPlayers', '在线人数', metrics.series.playersOnline, (v) => v);
         drawLineChart('chartCpu', 'CPU 使用（核）', metrics.series.cpuCores, (v) => Number(v).toFixed(2));
@@ -273,7 +274,7 @@ export function renderUi() {
         admin ? chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds) : '',
         '<div class="card"><div class="label">Uptime</div><div class="metric-big">' + formatSeconds(metrics.stats.uptimeSeconds) + '</div></div>',
         '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
-        admin ? '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>' : '',
+        admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
       ].join('');
     }
 

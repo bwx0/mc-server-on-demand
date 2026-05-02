@@ -145,6 +145,7 @@ export function loadConfig() {
       accessKeySecret: env('PROM_ACCESS_KEY_SECRET', env('ALIYUN_ACCESS_KEY_SECRET')),
       rangeMinutes: numberEnv('PROM_QUERY_RANGE_MINUTES', 60),
       stepSeconds: numberEnv('PROM_QUERY_STEP_SECONDS', 30),
+      playerRangeDays: numberEnv('PROM_PLAYER_RANGE_DAYS', 7),
       serverLabel: env('PROM_SERVER_LABEL', 'mc'),
     },
     host: {
