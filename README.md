@@ -54,7 +54,7 @@ npm start
 - `POST /api/stop` stops safely by default. Send `{ "force": true }` to release the runtime without RCON.
 - `POST /api/runtime/heartbeat` is called by the runtime monitor with `x-runtime-token`.
 
-Browser API calls require `x-control-token: CONTROL_TOKEN`.
+Browser API calls require `x-control-token`. Use `ADMIN_TOKEN` to see full JSON details and run preflight checks. Use `USER_TOKEN` for normal start/stop/status access without the lower JSON details. `CONTROL_TOKEN` remains a backward-compatible admin token alias.
 
 ## DNS and Network
 

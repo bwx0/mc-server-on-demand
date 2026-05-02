@@ -66,6 +66,8 @@ export function loadConfig() {
       stateFile: env('STATE_FILE', path.join(dataDir, 'state.json')),
       auditFile: env('AUDIT_FILE', path.join(dataDir, 'audit.log')),
       controlToken: env('CONTROL_TOKEN', 'change-me-before-public-use'),
+      adminToken: env('ADMIN_TOKEN', env('CONTROL_TOKEN', 'change-me-before-public-use')),
+      userToken: env('USER_TOKEN'),
       runtimeToken: env('RUNTIME_TOKEN', 'change-me-runtime-token'),
       lockTimeoutMs: numberEnv('LOCK_TIMEOUT_MS', 15 * 60 * 1000),
     },

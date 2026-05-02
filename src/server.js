@@ -29,11 +29,60 @@ function send(res, status, body, headers = {}) {
   res.end(payload);
 }
 
+function publicState(state) {
+  if (!state) return state;
+  return {
+    phase: state.phase,
+    provider: state.provider,
+    runtimeName: state.runtimeName,
+    eipAddress: state.eipAddress,
+    players: state.players,
+    playerCount: state.playerCount,
+    zeroPlayersSince: state.zeroPlayersSince,
+    idleAlertSentAt: state.idleAlertSentAt,
+    lastHeartbeatAt: state.lastHeartbeatAt,
+    lastError: state.lastError,
+    updatedAt: state.updatedAt,
+  };
+}
+
+function responseForRole(data, role) {
+  if (role === 'admin') {
+    return { role, ...data };
+  }
+  return {
+    role,
+    idempotent: data.idempotent,
+    message: data.message,
+    state: publicState(data.state),
+  };
+}
+
 function requireControl(req) {
   const token = req.headers['x-control-token'] || req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  if (!token || token !== config.app.controlToken) {
+  if (token && token === config.app.adminToken) {
+    req.controlRole = 'admin';
+    return 'admin';
+  }
+  if (token && config.app.userToken && token === config.app.userToken) {
+    req.controlRole = 'user';
+    return 'user';
+  }
+  if (token && token === config.app.controlToken) {
+    req.controlRole = 'admin';
+    return 'admin';
+  }
+  {
     const error = new Error('Unauthorized');
     error.status = 401;
+    throw error;
+  }
+}
+
+function requireAdmin(req) {
+  if (req.controlRole !== 'admin') {
+    const error = new Error('Admin token required');
+    error.status = 403;
     throw error;
   }
 }
@@ -65,25 +114,27 @@ async function route(req, res) {
     return send(res, 200, state);
   }
 
+  let role = null;
   if (url.pathname.startsWith('/api/')) {
-    requireControl(req);
+    role = requireControl(req);
   }
 
   if (url.pathname === '/api/status' && req.method === 'GET') {
-    return send(res, 200, await orchestrator.status());
+    return send(res, 200, responseForRole(await orchestrator.status(), role));
   }
 
   if (url.pathname === '/api/preflight' && req.method === 'GET') {
-    return send(res, 200, await orchestrator.preflight());
+    requireAdmin(req);
+    return send(res, 200, { role, ...(await orchestrator.preflight()) });
   }
 
   if (url.pathname === '/api/start' && req.method === 'POST') {
-    return send(res, 200, await orchestrator.start());
+    return send(res, 200, responseForRole(await orchestrator.start(), role));
   }
 
   if (url.pathname === '/api/stop' && req.method === 'POST') {
     const body = await readJson(req);
-    return send(res, 200, await orchestrator.stop({ force: body.force === true }));
+    return send(res, 200, responseForRole(await orchestrator.stop({ force: body.force === true }), role));
   }
 
   return send(res, 404, { error: 'Not found' });
@@ -94,7 +145,7 @@ const server = http.createServer((req, res) => {
     const status = error.status || 500;
     send(res, status, {
       error: error.message,
-      state: error.state,
+      state: req.controlRole === 'user' ? publicState(error.state) : error.state,
     });
   });
 });

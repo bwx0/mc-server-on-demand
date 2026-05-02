@@ -23,6 +23,7 @@ export function renderUi() {
     .status-line { display: flex; gap: 14px; flex-wrap: wrap; color: #777; font-size: 14px; margin: 8px 0 12px; }
     .spinner { width: 14px; height: 14px; border: 2px solid rgba(127,127,127,.35); border-top-color: currentColor; border-radius: 50%; animation: spin .8s linear infinite; display: none; }
     .busy .spinner { display: inline-block; }
+    .hidden { display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -38,7 +39,7 @@ export function renderUi() {
   <section class="card">
     <div class="label">控制令牌</div>
     <div class="row">
-      <input id="token" type="password" placeholder="CONTROL_TOKEN">
+      <input id="token" type="password" placeholder="ADMIN_TOKEN 或 USER_TOKEN">
       <button id="saveToken">保存</button>
     </div>
   </section>
@@ -53,16 +54,16 @@ export function renderUi() {
     <button class="primary action" id="start">启动服务器</button>
     <button class="danger action" id="stop">安全停止</button>
     <button class="danger action" id="forceStop">强制释放</button>
-    <button class="action" id="preflight">预检</button>
+    <button class="action admin-only" id="preflight">预检</button>
   </section>
 
-  <h2>详情</h2>
   <div class="status-line" id="statusLine">
     <span class="spinner" aria-hidden="true"></span>
     <span id="busyText">空闲</span>
     <span>状态更新时间：<span id="updatedAt">-</span></span>
     <span>最近心跳：<span id="heartbeatAt">-</span></span>
   </div>
+  <h2 id="detailsTitle">详情</h2>
   <pre id="output">Loading...</pre>
 
   <script>
@@ -71,8 +72,11 @@ export function renderUi() {
     const statusLine = document.getElementById('statusLine');
     const busyText = document.getElementById('busyText');
     const actionButtons = Array.from(document.querySelectorAll('button.action'));
+    const adminOnlyElements = Array.from(document.querySelectorAll('.admin-only'));
+    const detailsTitle = document.getElementById('detailsTitle');
     let busy = false;
     let currentPhase = 'unknown';
+    let currentRole = null;
     tokenInput.value = localStorage.getItem('controlToken') || '';
 
     function formatTime(value) {
@@ -87,6 +91,17 @@ export function renderUi() {
       statusLine.classList.toggle('busy', busy);
       busyText.textContent = busy ? label : '空闲';
       updateButtons();
+    }
+
+    function setRole(role) {
+      if (!role) return;
+      currentRole = role;
+      const admin = currentRole === 'admin';
+      output.classList.toggle('hidden', !admin);
+      detailsTitle.classList.toggle('hidden', !admin);
+      for (const element of adminOnlyElements) {
+        element.classList.toggle('hidden', !admin);
+      }
     }
 
     function updateButtons() {
@@ -119,7 +134,10 @@ export function renderUi() {
     }
 
     function show(data) {
-      output.textContent = JSON.stringify(data, null, 2);
+      setRole(data.role);
+      if (currentRole === 'admin') {
+        output.textContent = JSON.stringify(data, null, 2);
+      }
       const state = data.state || data;
       if (!state.phase) return;
       currentPhase = state.phase || 'unknown';
@@ -135,7 +153,11 @@ export function renderUi() {
       try {
         show(await fn());
       } catch (error) {
-        output.textContent = error.message;
+        if (currentRole === 'admin') {
+          output.textContent = error.message;
+        } else {
+          busyText.textContent = error.message;
+        }
       }
     }
 

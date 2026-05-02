@@ -61,7 +61,8 @@ cp .env.example .env
 编辑 `.env`，至少填写：
 
 - `PUBLIC_BASE_URL`
-- `CONTROL_TOKEN`
+- `ADMIN_TOKEN`
+- `USER_TOKEN`
 - `RUNTIME_TOKEN`
 - `ALIYUN_ACCESS_KEY_ID`
 - `ALIYUN_ACCESS_KEY_SECRET`
@@ -74,6 +75,8 @@ cp .env.example .env
 - `RUNTIME_IMAGE`
 - `ALIYUN_DISK_ID`
 - `MINECRAFT_RCON_PASSWORD`
+
+`ADMIN_TOKEN` 用于管理员页面，会显示下方 JSON 详情并允许执行预检。`USER_TOKEN` 用于普通开服/停服页面，只显示上方状态、在线人数、运行实例和更新时间，不显示下方 JSON 详情。`CONTROL_TOKEN` 仍可作为兼容旧配置的管理员令牌。
 
 第一次上线建议保持：
 
