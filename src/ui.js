@@ -47,7 +47,7 @@ export function renderUi() {
   <section class="card">
     <div class="label">控制令牌</div>
     <div class="row">
-      <input id="token" type="password" placeholder="ADMIN_TOKEN 或 USER_TOKEN">
+      <input id="token" type="password" placeholder="输入TOKEN">
       <button id="saveToken">保存</button>
     </div>
   </section>
