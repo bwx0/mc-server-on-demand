@@ -138,7 +138,8 @@ export function renderUi() {
     }
 
     function formatAxisTime(value) {
-      return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const date = new Date(value);
+      return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
     }
 
     function latest(series) {
@@ -244,7 +245,7 @@ export function renderUi() {
       if (window.echarts) {
         disposeCharts();
         charts.innerHTML = [
-          echartCard('chartPlayers', '在线人数', metrics.stats.playersOnline, (v) => String(v ?? '-')),
+          admin ? echartCard('chartPlayers', '在线人数', metrics.stats.playersOnline, (v) => String(v ?? '-')) : '',
           echartCard('chartCpu', 'CPU 使用（核）', latest(metrics.series.cpuCores), (v) => Number(v ?? 0).toFixed(2)),
           echartCard('chartMemory', '内存使用率', latest(metrics.series.memoryPercent), (v) => Number(v ?? 0).toFixed(1) + '%'),
           echartCard('chartRx', '接收流量', latest(metrics.series.networkRxBps), formatBytes),
@@ -254,7 +255,7 @@ export function renderUi() {
           '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
           admin ? '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>' : '',
         ].join('');
-        drawLineChart('chartPlayers', '在线人数', metrics.series.playersOnline, (v) => v);
+        if (admin) drawLineChart('chartPlayers', '在线人数', metrics.series.playersOnline, (v) => v);
         drawLineChart('chartCpu', 'CPU 使用（核）', metrics.series.cpuCores, (v) => Number(v).toFixed(2));
         drawLineChart('chartMemory', '内存使用率', metrics.series.memoryPercent, (v) => Number(v).toFixed(1) + '%');
         drawLineChart('chartRx', '接收流量', metrics.series.networkRxBps, formatBytes);
@@ -264,7 +265,7 @@ export function renderUi() {
       }
       disposeCharts();
       charts.innerHTML = [
-        chartCard('在线人数', metrics.stats.playersOnline, metrics.series.playersOnline, (v) => String(v ?? '-')),
+        admin ? chartCard('在线人数', metrics.stats.playersOnline, metrics.series.playersOnline, (v) => String(v ?? '-')) : '',
         chartCard('CPU 使用（核）', latest(metrics.series.cpuCores), metrics.series.cpuCores, (v) => Number(v ?? 0).toFixed(2)),
         chartCard('内存使用率', latest(metrics.series.memoryPercent), metrics.series.memoryPercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
         chartCard('接收流量', latest(metrics.series.networkRxBps), metrics.series.networkRxBps, formatBytes),
