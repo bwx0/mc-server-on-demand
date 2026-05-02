@@ -18,6 +18,7 @@ const PROM_PUSH_INTERVAL_MS = Number(process.env.PROM_PUSH_INTERVAL_MS || 10000)
 const PROM_JOB = process.env.PROM_JOB || 'minecraft';
 const PROM_INSTANCE = process.env.PROM_INSTANCE || os.hostname();
 const PROM_SERVER_LABEL = process.env.PROM_SERVER_LABEL || 'mc';
+const RUNTIME_STARTED_AT = Date.now();
 
 const AUTH = 3;
 const EXEC = 2;
@@ -333,6 +334,8 @@ function prometheusText(payload) {
     metricLine('minecraft_rcon_up', payload.rconError ? 0 : 1, {}),
     '# TYPE minecraft_idle_seconds gauge',
     metricLine('minecraft_idle_seconds', idleSeconds, {}),
+    '# TYPE minecraft_runtime_uptime_seconds gauge',
+    metricLine('minecraft_runtime_uptime_seconds', Math.floor((Date.now() - RUNTIME_STARTED_AT) / 1000), {}),
     '# TYPE minecraft_disk_total_bytes gauge',
     metricLine('minecraft_disk_total_bytes', payload.disk?.totalBytes, {}),
     '# TYPE minecraft_disk_free_bytes gauge',

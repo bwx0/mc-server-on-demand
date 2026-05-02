@@ -24,6 +24,13 @@ export function renderUi() {
     .spinner { width: 14px; height: 14px; border: 2px solid rgba(127,127,127,.35); border-top-color: currentColor; border-radius: 50%; animation: spin .8s linear infinite; display: none; }
     .busy .spinner { display: inline-block; }
     .hidden { display: none; }
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 16px 0; }
+    .chart { min-height: 150px; }
+    .chart svg { width: 100%; height: 90px; overflow: visible; }
+    .metric-big { font-size: 22px; font-weight: 700; margin: 4px 0 8px; }
+    .bar { height: 10px; border-radius: 999px; background: rgba(127,127,127,.2); overflow: hidden; }
+    .bar span { display: block; height: 100%; background: currentColor; }
+    .player-row { display: grid; grid-template-columns: 90px 1fr 64px; gap: 8px; align-items: center; margin: 8px 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -64,6 +71,12 @@ export function renderUi() {
     <span>最近心跳：<span id="heartbeatAt">-</span></span>
     <span>自动停服：<span id="idleStopEta">-</span></span>
   </div>
+  <section>
+    <h2>监控视图</h2>
+    <div class="charts" id="charts">
+      <div class="card">监控数据加载中...</div>
+    </div>
+  </section>
   <h2 id="detailsTitle">详情</h2>
   <pre id="output">Loading...</pre>
 
@@ -75,6 +88,7 @@ export function renderUi() {
     const actionButtons = Array.from(document.querySelectorAll('button.action'));
     const adminOnlyElements = Array.from(document.querySelectorAll('.admin-only'));
     const detailsTitle = document.getElementById('detailsTitle');
+    const charts = document.getElementById('charts');
     let busy = false;
     let currentPhase = 'unknown';
     let currentRole = null;
@@ -96,6 +110,80 @@ export function renderUi() {
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
       return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+    }
+
+    function formatSeconds(seconds) {
+      if (!Number.isFinite(Number(seconds))) return '-';
+      const total = Math.max(0, Math.floor(Number(seconds)));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const rest = total % 60;
+      return hours > 0 ? hours + 'h ' + minutes + 'm' : minutes + 'm ' + rest + 's';
+    }
+
+    function formatBytes(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return '-';
+      const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+      let scaled = number;
+      let unit = 0;
+      while (scaled >= 1024 && unit < units.length - 1) {
+        scaled /= 1024;
+        unit += 1;
+      }
+      return scaled.toFixed(unit === 0 ? 0 : 1) + ' ' + units[unit];
+    }
+
+    function latest(series) {
+      return series?.length ? series[series.length - 1].v : null;
+    }
+
+    function sparkline(series) {
+      if (!series?.length) return '<div class="label">暂无数据</div>';
+      const values = series.map((point) => Number(point.v)).filter(Number.isFinite);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const span = max - min || 1;
+      const width = 260;
+      const height = 80;
+      const points = series.map((point, index) => {
+        const x = series.length === 1 ? width : index * width / (series.length - 1);
+        const y = height - ((Number(point.v) - min) / span) * height;
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      }).join(' ');
+      return '<svg viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points="' + points + '"/></svg>';
+    }
+
+    function chartCard(title, value, series, formatter = (v) => v ?? '-') {
+      return '<div class="card chart"><div class="label">' + title + '</div><div class="metric-big">' + formatter(value) + '</div>' + sparkline(series) + '</div>';
+    }
+
+    function renderPlayerRows(players) {
+      if (!players?.length) return '<div class="label">当前没有在线玩家</div>';
+      const max = Math.max(...players.map((player) => player.sessionSeconds), 1);
+      return players.map((player) => {
+        const width = Math.max(3, player.sessionSeconds / max * 100);
+        return '<div class="player-row"><div>' + player.name + '</div><div class="bar"><span style="width:' + width + '%"></span></div><div>' + formatSeconds(player.sessionSeconds) + '</div></div>';
+      }).join('');
+    }
+
+    function renderMetrics(data) {
+      const metrics = data.metrics;
+      if (!metrics?.enabled) {
+        charts.innerHTML = '<div class="card">' + (metrics?.message || '监控未配置') + '</div>';
+        return;
+      }
+      charts.innerHTML = [
+        chartCard('在线人数', metrics.stats.playersOnline, metrics.series.playersOnline, (v) => String(v ?? '-')),
+        chartCard('CPU 使用（核）', latest(metrics.series.cpuCores), metrics.series.cpuCores, (v) => Number(v ?? 0).toFixed(2)),
+        chartCard('内存使用率', latest(metrics.series.memoryPercent), metrics.series.memoryPercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
+        chartCard('接收流量', latest(metrics.series.networkRxBps), metrics.series.networkRxBps, formatBytes),
+        chartCard('发送流量', latest(metrics.series.networkTxBps), metrics.series.networkTxBps, formatBytes),
+        chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds),
+        '<div class="card"><div class="label">Uptime</div><div class="metric-big">' + formatSeconds(metrics.stats.uptimeSeconds) + '</div></div>',
+        '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
+        '<div class="card"><div class="label">玩家在线时长</div>' + renderPlayerRows(metrics.players) + '</div>',
+      ].join('');
     }
 
     function updateIdleStopEta() {
@@ -197,6 +285,12 @@ export function renderUi() {
       catch (error) { output.textContent = error.message; }
     }
 
+    async function loadMetrics() {
+      if (busy) return;
+      try { renderMetrics(await request('/api/metrics/dashboard', {}, '刷新监控中...')); }
+      catch (error) { charts.innerHTML = '<div class="card">' + error.message + '</div>'; }
+    }
+
     document.getElementById('saveToken').onclick = () => {
       localStorage.setItem('controlToken', tokenInput.value);
       load();
@@ -207,7 +301,9 @@ export function renderUi() {
     document.getElementById('stop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: false }) }, '安全停止中...'));
     document.getElementById('forceStop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: true }) }, '强制释放中...'));
     load();
+    loadMetrics();
     setInterval(load, 15000);
+    setInterval(loadMetrics, 30000);
     setInterval(updateIdleStopEta, 1000);
   </script>
 </body>

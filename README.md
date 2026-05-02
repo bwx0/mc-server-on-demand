@@ -12,6 +12,7 @@ This project runs a small web control plane on a low-cost VPS and creates a high
 - Sends email or webhook alert when zero players remain online for `IDLE_ALERT_MINUTES`, then safely stops after `IDLE_STOP_MINUTES` when `IDLE_AUTO_STOP=true`.
 - Runtime containers also enforce `IDLE_STOP_MINUTES` locally, so an empty server can stop itself if the control plane is unavailable.
 - Runtime containers can push Minecraft and container metrics to an Aliyun Prometheus Pushgateway with `PROM_PUSHGATEWAY_URL`; default push interval is `PROM_PUSH_INTERVAL_MS=10000`.
+- The control plane can query Aliyun Prometheus V2 through `PROM_HTTP_API_URL` and Basic Auth AccessKey credentials, then render embedded charts without exposing credentials to browsers.
 
 ## Important Storage Decision
 
@@ -80,3 +81,7 @@ Restrict these permissions by region, resource group, and tags where possible.
 - Use `IDLE_STOP_MINUTES=10` to control how long a running server may stay empty before safe auto-stop.
 - Set `IDLE_AUTO_STOP=false` temporarily if you want empty-server detection to alert without stopping.
 - If `/data/server-init.sh` is missing or not executable, the runtime container stays alive for manual inspection instead of deleting itself immediately.
+
+## Embedded Metrics
+
+For Aliyun Prometheus V2, set `PROM_HTTP_API_URL`, `PROM_ACCESS_KEY_ID`, and `PROM_ACCESS_KEY_SECRET`. The RAM user behind the AccessKey must have `AliyunPrometheusMetricReadAccess` or `AliyunCloudMonitorFullAccess`. The control plane queries `/api/v1/query` and `/api/v1/query_range` server-side and renders the charts on the control page.

@@ -5,11 +5,13 @@ import { AliyunPop } from './cloud/aliyun-pop.js';
 import { Orchestrator } from './orchestrator.js';
 import { StateStore } from './store.js';
 import { renderUi } from './ui.js';
+import { PrometheusClient } from './metrics/prometheus.js';
 
 const config = loadConfig();
 const store = new StateStore(config);
 const pop = new AliyunPop(config);
 const orchestrator = new Orchestrator(config, pop, store);
+const prometheus = new PrometheusClient(config);
 
 async function readJson(req) {
   const chunks = [];
@@ -177,6 +179,13 @@ async function route(req, res) {
 
   if (url.pathname === '/api/status' && req.method === 'GET') {
     return send(res, 200, responseForRole(await orchestrator.status(), role));
+  }
+
+  if (url.pathname === '/api/metrics/dashboard' && req.method === 'GET') {
+    return send(res, 200, {
+      role,
+      metrics: await prometheus.dashboard(),
+    });
   }
 
   if (url.pathname === '/api/preflight' && req.method === 'GET') {

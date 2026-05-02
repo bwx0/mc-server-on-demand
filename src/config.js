@@ -137,6 +137,14 @@ export function loadConfig() {
       emailTo: csvEnv('ALERT_EMAIL_TO'),
       webhookUrl: env('ALERT_WEBHOOK_URL'),
     },
+    prometheus: {
+      httpApiUrl: env('PROM_HTTP_API_URL'),
+      accessKeyId: env('PROM_ACCESS_KEY_ID', env('ALIYUN_ACCESS_KEY_ID')),
+      accessKeySecret: env('PROM_ACCESS_KEY_SECRET', env('ALIYUN_ACCESS_KEY_SECRET')),
+      rangeMinutes: numberEnv('PROM_QUERY_RANGE_MINUTES', 60),
+      stepSeconds: numberEnv('PROM_QUERY_STEP_SECONDS', 30),
+      serverLabel: env('PROM_SERVER_LABEL', 'mc'),
+    },
     host: {
       hostname: os.hostname(),
       nodeEnv: env('NODE_ENV', 'development'),
