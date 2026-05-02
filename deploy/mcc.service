@@ -1,0 +1,17 @@
+[Unit]
+Description=Minecraft on-demand control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ondemand_mc_server
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+User=mcc
+Group=mcc
+
+[Install]
+WantedBy=multi-user.target
