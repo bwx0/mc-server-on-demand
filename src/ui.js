@@ -236,15 +236,15 @@ export function renderUi() {
       };
     }
 
-    async function request(path, options = {}, label = '加载中...') {
-      setBusy(true, label);
+    async function request(path, options = {}, label = '加载中...', useGlobalBusy = true) {
+      if (useGlobalBusy) setBusy(true, label);
       try {
         const response = await fetch(path, { ...options, headers: headers() });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || response.statusText);
         return body;
       } finally {
-        setBusy(false);
+        if (useGlobalBusy) setBusy(false);
       }
     }
 
@@ -286,8 +286,7 @@ export function renderUi() {
     }
 
     async function loadMetrics() {
-      if (busy) return;
-      try { renderMetrics(await request('/api/metrics/dashboard', {}, '刷新监控中...')); }
+      try { renderMetrics(await request('/api/metrics/dashboard', {}, '刷新监控中...', false)); }
       catch (error) { charts.innerHTML = '<div class="card">' + error.message + '</div>'; }
     }
 
