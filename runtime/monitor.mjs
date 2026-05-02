@@ -9,6 +9,7 @@ const RCON_HOST = process.env.MINECRAFT_RCON_HOST || '127.0.0.1';
 const RCON_PORT = Number(process.env.MINECRAFT_RCON_PORT || 25575);
 const RCON_PASSWORD = process.env.MINECRAFT_RCON_PASSWORD;
 const INTERVAL_MS = Number(process.env.MONITOR_INTERVAL_MS || 30000);
+const MONITOR_DEBUG = ['1', 'true', 'yes', 'on'].includes(String(process.env.MONITOR_DEBUG || '').toLowerCase());
 
 const AUTH = 3;
 const EXEC = 2;
@@ -61,12 +62,42 @@ async function rcon(command) {
   }
 }
 
+function parsePlayerNames(value) {
+  return value
+    .replace(/\r/g, '\n')
+    .split(/[,\n]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 function parsePlayers(listOutput) {
-  const match = listOutput.match(/There are (\d+) of a max of \d+ players online: ?(.*)$/i);
-  if (!match) return { playerCount: 0, players: [], raw: listOutput };
-  const playerCount = Number(match[1]);
-  const players = match[2] ? match[2].split(',').map((name) => name.trim()).filter(Boolean) : [];
-  return { playerCount, players, raw: listOutput };
+  const raw = String(listOutput || '').trim();
+  const patterns = [
+    /There are\s+(\d+)\s+of\s+a\s+max\s+of\s+\d+\s+players\s+online:?\s*([\s\S]*)/i,
+    /There are\s+(\d+)\s*\/\s*\d+\s+players\s+online:?\s*([\s\S]*)/i,
+    /当前在线玩家(?:数)?[：: ]*\s*(\d+)[^\n：:]*[：:]?\s*([\s\S]*)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match) {
+      const playerCount = Number(match[1]);
+      const players = parsePlayerNames(match[2] || '');
+      return {
+        playerCount,
+        players,
+        raw,
+        parseStatus: 'matched',
+      };
+    }
+  }
+
+  return {
+    playerCount: 0,
+    players: [],
+    raw,
+    parseStatus: raw ? 'unmatched' : 'empty',
+  };
 }
 
 async function diskUsage(path) {
@@ -87,7 +118,16 @@ async function heartbeat() {
   let playerInfo = { playerCount: 0, players: [], raw: null };
   let rconError = null;
   try {
-    playerInfo = parsePlayers(await rcon('list'));
+    const listOutput = await rcon('list');
+    playerInfo = parsePlayers(listOutput);
+    if (MONITOR_DEBUG) {
+      console.log(JSON.stringify({
+        type: 'rcon-list',
+        output: listOutput,
+        parsed: playerInfo,
+        at: new Date().toISOString(),
+      }));
+    }
   } catch (error) {
     rconError = error.message;
   }
@@ -118,6 +158,14 @@ async function heartbeat() {
   });
   if (!response.ok) {
     throw new Error(`heartbeat failed: ${response.status} ${response.statusText}`);
+  }
+  if (MONITOR_DEBUG) {
+    console.log(JSON.stringify({
+      type: 'heartbeat-ok',
+      playerCount: payload.playerCount,
+      players: payload.players,
+      at: payload.at,
+    }));
   }
 }
 

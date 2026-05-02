@@ -96,6 +96,8 @@ export function loadConfig() {
       stopGraceSeconds: numberEnv('STOP_GRACE_SECONDS', 90),
       idleAlertMinutes: numberEnv('IDLE_ALERT_MINUTES', 5),
       idleAutoStop: boolEnv('IDLE_AUTO_STOP', false),
+      monitorIntervalMs: numberEnv('MONITOR_INTERVAL_MS', 30000),
+      monitorDebug: boolEnv('MONITOR_DEBUG', false),
     },
     storage: {
       mode: env('STORAGE_MODE', 'cloud-disk'),

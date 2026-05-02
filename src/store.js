@@ -12,6 +12,7 @@ const initialState = {
   zeroPlayersSince: null,
   idleAlertSentAt: null,
   lastHeartbeatAt: null,
+  lastHeartbeat: null,
   lastError: null,
   updatedAt: null,
   events: [],

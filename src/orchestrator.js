@@ -201,6 +201,17 @@ export class Orchestrator {
         playerCount,
         zeroPlayersSince,
         lastHeartbeatAt: now.toISOString(),
+        lastHeartbeat: {
+          at: payload.at ?? now.toISOString(),
+          host: payload.host,
+          raw: payload.raw,
+          parseStatus: payload.parseStatus,
+          rconError: payload.rconError,
+          disk: payload.disk,
+          loadavg: payload.loadavg,
+          freeMemBytes: payload.freeMemBytes,
+          totalMemBytes: payload.totalMemBytes,
+        },
       };
     });
 
