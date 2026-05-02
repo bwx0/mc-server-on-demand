@@ -16,6 +16,10 @@ function canStart(state) {
   return state.phase === 'stopped' || (state.phase === 'failed' && !state.runtimeId);
 }
 
+function runtimeReady(payload) {
+  return !payload.rconError && payload.parseStatus === 'matched';
+}
+
 export class Orchestrator {
   constructor(config, pop, store) {
     this.config = config;
@@ -95,7 +99,7 @@ export class Orchestrator {
         const runtime = await this.provider().createRuntime();
         const state = await this.store.update((current) => ({
           ...current,
-          phase: 'running',
+          phase: 'initializing',
           provider: runtime.provider,
           runtimeId: runtime.runtimeId,
           runtimeName: runtime.runtimeName,
@@ -189,6 +193,7 @@ export class Orchestrator {
     const now = new Date();
     const playerCount = Number(payload.playerCount ?? payload.players?.length ?? 0);
     const players = Array.isArray(payload.players) ? payload.players : [];
+    const nextPhase = runtimeReady(payload) ? 'running' : 'initializing';
 
     const state = await this.store.update((current) => {
       const zeroPlayersSince = playerCount === 0
@@ -196,7 +201,7 @@ export class Orchestrator {
         : null;
       return {
         ...current,
-        phase: current.phase === 'starting' ? 'running' : current.phase,
+        phase: ['starting', 'initializing'].includes(current.phase) ? nextPhase : current.phase,
         players,
         playerCount,
         zeroPlayersSince,

@@ -94,6 +94,7 @@ export function renderUi() {
       for (const button of actionButtons) {
         button.disabled = busy || lifecycleBusy;
       }
+      document.getElementById('start').disabled = busy || lifecycleBusy || currentPhase === 'initializing' || currentPhase === 'running';
     }
 
     function headers() {
