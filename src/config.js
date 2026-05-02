@@ -96,6 +96,7 @@ export function loadConfig() {
       rconPort: numberEnv('MINECRAFT_RCON_PORT', 25575),
       rconPassword: env('MINECRAFT_RCON_PASSWORD'),
       stopGraceSeconds: numberEnv('STOP_GRACE_SECONDS', 90),
+      localStopExitGraceSeconds: numberEnv('LOCAL_STOP_EXIT_GRACE_SECONDS', 60),
       idleAlertMinutes: numberEnv('IDLE_ALERT_MINUTES', 5),
       idleStopMinutes: numberEnv('IDLE_STOP_MINUTES', 10),
       idleAutoStop: boolEnv('IDLE_AUTO_STOP', true),

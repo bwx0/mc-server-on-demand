@@ -12,6 +12,7 @@ const INTERVAL_MS = Number(process.env.MONITOR_INTERVAL_MS || 30000);
 const MONITOR_DEBUG = ['1', 'true', 'yes', 'on'].includes(String(process.env.MONITOR_DEBUG || '').toLowerCase());
 const IDLE_AUTO_STOP = !['0', 'false', 'no', 'off'].includes(String(process.env.IDLE_AUTO_STOP ?? 'true').toLowerCase());
 const IDLE_STOP_MS = Number(process.env.IDLE_STOP_MINUTES || 10) * 60 * 1000;
+const LOCAL_STOP_EXIT_GRACE_MS = Number(process.env.LOCAL_STOP_EXIT_GRACE_SECONDS || 60) * 1000;
 const PROM_PUSHGATEWAY_URL = process.env.PROM_PUSHGATEWAY_URL;
 const PROM_PUSH_INTERVAL_MS = Number(process.env.PROM_PUSH_INTERVAL_MS || 10000);
 const PROM_JOB = process.env.PROM_JOB || 'minecraft';
@@ -224,6 +225,22 @@ async function localIdleStop(playerInfo, rconError) {
   await new Promise((resolve) => setTimeout(resolve, 5000));
   await rcon('save-all flush');
   await rcon('stop');
+
+  // If the server wrapper script does not exit after Minecraft stops, the ECI
+  // container can stay alive. Terminate PID 1 after a grace period so the
+  // container reaches a terminal state.
+  setTimeout(() => {
+    try {
+      console.log(JSON.stringify({
+        type: 'local-idle-stop-terminating-pid1',
+        graceSeconds: LOCAL_STOP_EXIT_GRACE_MS / 1000,
+        at: new Date().toISOString(),
+      }));
+      process.kill(1, 'SIGTERM');
+    } catch (error) {
+      console.error(`failed to terminate pid 1: ${error.message}`);
+    }
+  }, LOCAL_STOP_EXIT_GRACE_MS).unref();
 }
 
 async function collectPayload() {
