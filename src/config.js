@@ -101,6 +101,10 @@ export function loadConfig() {
       idleAutoStop: boolEnv('IDLE_AUTO_STOP', true),
       monitorIntervalMs: numberEnv('MONITOR_INTERVAL_MS', 30000),
       monitorDebug: boolEnv('MONITOR_DEBUG', false),
+      promPushgatewayUrl: env('PROM_PUSHGATEWAY_URL'),
+      promPushIntervalMs: numberEnv('PROM_PUSH_INTERVAL_MS', 10000),
+      promJob: env('PROM_JOB', 'minecraft'),
+      promServerLabel: env('PROM_SERVER_LABEL', 'mc'),
     },
     storage: {
       mode: env('STORAGE_MODE', 'cloud-disk'),

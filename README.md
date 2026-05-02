@@ -11,6 +11,7 @@ This project runs a small web control plane on a low-cost VPS and creates a high
 - Accepts runtime heartbeats with player list, memory, load average, and disk usage.
 - Sends email or webhook alert when zero players remain online for `IDLE_ALERT_MINUTES`, then safely stops after `IDLE_STOP_MINUTES` when `IDLE_AUTO_STOP=true`.
 - Runtime containers also enforce `IDLE_STOP_MINUTES` locally, so an empty server can stop itself if the control plane is unavailable.
+- Runtime containers can push Minecraft and container metrics to an Aliyun Prometheus Pushgateway with `PROM_PUSHGATEWAY_URL`; default push interval is `PROM_PUSH_INTERVAL_MS=10000`.
 
 ## Important Storage Decision
 

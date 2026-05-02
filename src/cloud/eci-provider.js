@@ -38,6 +38,20 @@ function commandParams(command) {
   };
 }
 
+function promEnvParams(config, startIndex) {
+  if (!config.runtime.promPushgatewayUrl) return {};
+  return {
+    [`Container.1.EnvironmentVar.${startIndex}.Key`]: 'PROM_PUSHGATEWAY_URL',
+    [`Container.1.EnvironmentVar.${startIndex}.Value`]: config.runtime.promPushgatewayUrl,
+    [`Container.1.EnvironmentVar.${startIndex + 1}.Key`]: 'PROM_PUSH_INTERVAL_MS',
+    [`Container.1.EnvironmentVar.${startIndex + 1}.Value`]: String(config.runtime.promPushIntervalMs),
+    [`Container.1.EnvironmentVar.${startIndex + 2}.Key`]: 'PROM_JOB',
+    [`Container.1.EnvironmentVar.${startIndex + 2}.Value`]: config.runtime.promJob,
+    [`Container.1.EnvironmentVar.${startIndex + 3}.Key`]: 'PROM_SERVER_LABEL',
+    [`Container.1.EnvironmentVar.${startIndex + 3}.Value`]: config.runtime.promServerLabel,
+  };
+}
+
 function isNotFound(error) {
   const message = String(error?.message ?? '');
   const code = String(error?.code ?? error?.Code ?? '');
@@ -88,6 +102,7 @@ export class EciProvider {
       'Container.1.EnvironmentVar.7.Value': String(this.config.runtime.idleAutoStop),
       'Container.1.EnvironmentVar.8.Key': 'IDLE_STOP_MINUTES',
       'Container.1.EnvironmentVar.8.Value': String(this.config.runtime.idleStopMinutes),
+      ...promEnvParams(this.config, 9),
       ...commandParams(this.config.runtime.command),
       ...eciVolumeParams(this.config),
       ...this.pop.tags(),

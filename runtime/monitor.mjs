@@ -12,11 +12,20 @@ const INTERVAL_MS = Number(process.env.MONITOR_INTERVAL_MS || 30000);
 const MONITOR_DEBUG = ['1', 'true', 'yes', 'on'].includes(String(process.env.MONITOR_DEBUG || '').toLowerCase());
 const IDLE_AUTO_STOP = !['0', 'false', 'no', 'off'].includes(String(process.env.IDLE_AUTO_STOP ?? 'true').toLowerCase());
 const IDLE_STOP_MS = Number(process.env.IDLE_STOP_MINUTES || 10) * 60 * 1000;
+const PROM_PUSHGATEWAY_URL = process.env.PROM_PUSHGATEWAY_URL;
+const PROM_PUSH_INTERVAL_MS = Number(process.env.PROM_PUSH_INTERVAL_MS || 10000);
+const PROM_JOB = process.env.PROM_JOB || 'minecraft';
+const PROM_INSTANCE = process.env.PROM_INSTANCE || os.hostname();
+const PROM_SERVER_LABEL = process.env.PROM_SERVER_LABEL || 'mc';
 
 const AUTH = 3;
 const EXEC = 2;
 let zeroPlayersSince = null;
 let localStopStarted = false;
+let lastControlHeartbeatAt = 0;
+let lastPromPushAt = 0;
+let lastCpuSample = null;
+const playerJoinedAt = new Map();
 
 function packet(id, type, body) {
   const payload = Buffer.from(body, 'utf8');
@@ -118,6 +127,76 @@ async function diskUsage(path) {
   }
 }
 
+async function readText(path) {
+  try {
+    return await fs.readFile(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+async function cgroupMemory() {
+  const current = await readText('/sys/fs/cgroup/memory.current');
+  const max = await readText('/sys/fs/cgroup/memory.max');
+  if (!current) {
+    return {
+      currentBytes: os.totalmem() - os.freemem(),
+      maxBytes: os.totalmem(),
+    };
+  }
+  return {
+    currentBytes: Number(current.trim()),
+    maxBytes: max?.trim() === 'max' ? os.totalmem() : Number(max?.trim() || os.totalmem()),
+  };
+}
+
+async function cgroupCpuUsageCores() {
+  const raw = await readText('/sys/fs/cgroup/cpu.stat');
+  if (!raw) return null;
+  const usageLine = raw.split('\n').find((line) => line.startsWith('usage_usec '));
+  if (!usageLine) return null;
+  const usageUsec = Number(usageLine.split(/\s+/)[1]);
+  const now = Date.now();
+  const previous = lastCpuSample;
+  lastCpuSample = { usageUsec, at: now };
+  if (!previous) return null;
+  const usageDeltaMs = (usageUsec - previous.usageUsec) / 1000;
+  const wallDeltaMs = now - previous.at;
+  return wallDeltaMs > 0 ? usageDeltaMs / wallDeltaMs : null;
+}
+
+async function networkUsage() {
+  const raw = await readText('/proc/net/dev');
+  if (!raw) return null;
+  let receiveBytes = 0;
+  let transmitBytes = 0;
+  for (const line of raw.split('\n').slice(2)) {
+    const [namePart, dataPart] = line.split(':');
+    if (!dataPart) continue;
+    const name = namePart.trim();
+    if (!name || name === 'lo') continue;
+    const fields = dataPart.trim().split(/\s+/).map(Number);
+    receiveBytes += fields[0] || 0;
+    transmitBytes += fields[8] || 0;
+  }
+  return { receiveBytes, transmitBytes };
+}
+
+function updatePlayerSessions(players) {
+  const now = Date.now();
+  const online = new Set(players);
+  for (const player of players) {
+    if (!playerJoinedAt.has(player)) {
+      playerJoinedAt.set(player, now);
+    }
+  }
+  for (const player of playerJoinedAt.keys()) {
+    if (!online.has(player)) {
+      playerJoinedAt.delete(player);
+    }
+  }
+}
+
 async function localIdleStop(playerInfo, rconError) {
   if (!IDLE_AUTO_STOP || localStopStarted || rconError || playerInfo.parseStatus !== 'matched') {
     if (playerInfo.playerCount > 0) zeroPlayersSince = null;
@@ -147,7 +226,7 @@ async function localIdleStop(playerInfo, rconError) {
   await rcon('stop');
 }
 
-async function heartbeat() {
+async function collectPayload() {
   let playerInfo = { playerCount: 0, players: [], raw: null };
   let rconError = null;
   try {
@@ -166,8 +245,9 @@ async function heartbeat() {
   }
 
   await localIdleStop(playerInfo, rconError);
+  updatePlayerSessions(playerInfo.players);
 
-  const payload = {
+  return {
     ...playerInfo,
     rconError,
     host: os.hostname(),
@@ -175,9 +255,14 @@ async function heartbeat() {
     freeMemBytes: os.freemem(),
     totalMemBytes: os.totalmem(),
     disk: await diskUsage('/data'),
+    cgroupMemory: await cgroupMemory(),
+    cpuUsageCores: await cgroupCpuUsageCores(),
+    network: await networkUsage(),
     at: new Date().toISOString(),
   };
+}
 
+async function heartbeat(payload) {
   if (!CONTROL_PLANE_URL || !RUNTIME_TOKEN) {
     console.log(JSON.stringify(payload));
     return;
@@ -204,11 +289,109 @@ async function heartbeat() {
   }
 }
 
+function escapeLabel(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/"/g, '\\"');
+}
+
+function labels(extra = {}) {
+  const all = {
+    server: PROM_SERVER_LABEL,
+    instance: PROM_INSTANCE,
+    ...extra,
+  };
+  return `{${Object.entries(all).map(([key, value]) => `${key}="${escapeLabel(value)}"`).join(',')}}`;
+}
+
+function metricLine(name, value, extraLabels) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return null;
+  return `${name}${labels(extraLabels)} ${Number(value)}`;
+}
+
+function prometheusText(payload) {
+  const idleSeconds = zeroPlayersSince ? Math.floor((Date.now() - zeroPlayersSince) / 1000) : 0;
+  const lines = [
+    '# TYPE minecraft_players_online gauge',
+    metricLine('minecraft_players_online', payload.playerCount, {}),
+    '# TYPE minecraft_rcon_up gauge',
+    metricLine('minecraft_rcon_up', payload.rconError ? 0 : 1, {}),
+    '# TYPE minecraft_idle_seconds gauge',
+    metricLine('minecraft_idle_seconds', idleSeconds, {}),
+    '# TYPE minecraft_disk_total_bytes gauge',
+    metricLine('minecraft_disk_total_bytes', payload.disk?.totalBytes, {}),
+    '# TYPE minecraft_disk_free_bytes gauge',
+    metricLine('minecraft_disk_free_bytes', payload.disk?.freeBytes, {}),
+    '# TYPE minecraft_disk_available_bytes gauge',
+    metricLine('minecraft_disk_available_bytes', payload.disk?.availableBytes, {}),
+    '# TYPE minecraft_container_memory_usage_bytes gauge',
+    metricLine('minecraft_container_memory_usage_bytes', payload.cgroupMemory?.currentBytes, {}),
+    '# TYPE minecraft_container_memory_limit_bytes gauge',
+    metricLine('minecraft_container_memory_limit_bytes', payload.cgroupMemory?.maxBytes, {}),
+    '# TYPE minecraft_container_cpu_usage_cores gauge',
+    metricLine('minecraft_container_cpu_usage_cores', payload.cpuUsageCores, {}),
+    '# TYPE minecraft_container_network_receive_bytes_total counter',
+    metricLine('minecraft_container_network_receive_bytes_total', payload.network?.receiveBytes, {}),
+    '# TYPE minecraft_container_network_transmit_bytes_total counter',
+    metricLine('minecraft_container_network_transmit_bytes_total', payload.network?.transmitBytes, {}),
+    '# TYPE minecraft_system_load1 gauge',
+    metricLine('minecraft_system_load1', payload.loadavg?.[0], {}),
+    '# TYPE minecraft_system_load5 gauge',
+    metricLine('minecraft_system_load5', payload.loadavg?.[1], {}),
+    '# TYPE minecraft_system_load15 gauge',
+    metricLine('minecraft_system_load15', payload.loadavg?.[2], {}),
+  ].filter(Boolean);
+
+  for (const player of payload.players) {
+    lines.push(metricLine('minecraft_player_online', 1, { player }));
+    lines.push(metricLine('minecraft_player_session_seconds', Math.floor((Date.now() - playerJoinedAt.get(player)) / 1000), { player }));
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+function pushGatewayUrl() {
+  if (!PROM_PUSHGATEWAY_URL) return null;
+  const base = PROM_PUSHGATEWAY_URL.replace(/\/+$/, '');
+  if (base.includes('/metrics/job/')) return base;
+  return `${base}/metrics/job/${encodeURIComponent(PROM_JOB)}/instance/${encodeURIComponent(PROM_INSTANCE)}`;
+}
+
+async function pushPrometheus(payload) {
+  const url = pushGatewayUrl();
+  if (!url) return;
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    },
+    body: prometheusText(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`pushgateway failed: ${response.status} ${response.statusText}`);
+  }
+  if (MONITOR_DEBUG) {
+    console.log(JSON.stringify({
+      type: 'pushgateway-ok',
+      url,
+      playerCount: payload.playerCount,
+      at: payload.at,
+    }));
+  }
+}
+
 for (;;) {
   try {
-    await heartbeat();
+    const now = Date.now();
+    const payload = await collectPayload();
+    if (now - lastPromPushAt >= PROM_PUSH_INTERVAL_MS) {
+      await pushPrometheus(payload);
+      lastPromPushAt = now;
+    }
+    if (now - lastControlHeartbeatAt >= INTERVAL_MS) {
+      await heartbeat(payload);
+      lastControlHeartbeatAt = now;
+    }
   } catch (error) {
     console.error(error.message);
   }
-  await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+  await new Promise((resolve) => setTimeout(resolve, Math.min(INTERVAL_MS, PROM_PUSH_INTERVAL_MS)));
 }
