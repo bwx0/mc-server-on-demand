@@ -39,7 +39,7 @@ export function renderUi() {
   <header>
     <div>
       <h1>Minecraft On-Demand</h1>
-      <p>按需启动高配 Minecraft Java Server，空服后告警或自动释放。</p>
+      <p>需要时启动超高配 Minecraft Java 服务器，空闲时自动停服。</p>
     </div>
     <button id="refresh">刷新</button>
   </header>
