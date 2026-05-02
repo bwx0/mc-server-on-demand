@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="crpi-krmhngvf3bx1meh2-vpc.cn-guangzhou.personal.cr.aliyuncs.com/hub-wx/myhub:latest"
+IMAGE="crpi-krmhngvf3bx1meh2.cn-guangzhou.personal.cr.aliyuncs.com/hub-wx/myhub:latest"
 DOCKERFILE="runtime/Dockerfile"
 CONTEXT="runtime"
 
