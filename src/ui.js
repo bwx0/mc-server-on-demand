@@ -12,7 +12,7 @@ export function renderUi() {
     button { padding: 10px 14px; border: 1px solid currentColor; border-radius: 8px; background: transparent; cursor: pointer; }
     button.primary { background: #166534; color: white; border-color: #166534; }
     button.danger { background: #991b1b; color: white; border-color: #991b1b; }
-    button:disabled { opacity: .5; cursor: wait; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
     input { padding: 10px; border-radius: 8px; border: 1px solid #888; min-width: 280px; }
     pre { overflow: auto; padding: 16px; border-radius: 10px; background: rgba(127,127,127,.12); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 20px 0; }
