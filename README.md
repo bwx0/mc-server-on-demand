@@ -35,7 +35,7 @@ If your migrated 40 GiB disk already has a partition table, set `STORAGE_DISK_HA
 5. Enable RCON in `server.properties`, or let `server-init.sh` patch it from `MINECRAFT_RCON_PASSWORD`.
 6. Start the control plane with `npm start`.
 
-VPS deployment examples are in `deploy/mcc.service` and `deploy/nginx-mcc.conf`. Operational procedures are in `docs/ops-runbook.md`.
+VPS deployment examples are in `deploy/mcc.service` and `deploy/nginx-mcc.conf`. A short Chinese deployment manual is available at `docs/deployment-guide.zh-CN.md`; operational procedures are in `docs/ops-runbook.md`.
 
 For local testing, load the environment first:
 

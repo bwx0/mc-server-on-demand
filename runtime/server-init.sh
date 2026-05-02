@@ -45,10 +45,6 @@ if [ -x "$RUN_SCRIPT" ]; then
   exec "$RUN_SCRIPT"
 fi
 
-jar_file="$(ls -1 *.jar 2>/dev/null | head -n 1 || true)"
-if [ -z "$jar_file" ]; then
-  echo "No executable run.sh or server jar found in $MC_DIR."
-  sleep infinity
-fi
+echo "No executable run.sh found in $MC_DIR."
+sleep infinity
 
-exec java "-Xms${JAVA_XMS}" "-Xmx${JAVA_XMX}" -jar "$jar_file" nogui
