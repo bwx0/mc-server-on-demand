@@ -9,10 +9,21 @@ function toNumber(value) {
 
 function rangeSeries(response) {
   const result = response?.data?.result ?? [];
-  return result.flatMap((series) => (series.values ?? []).map(([timestamp, value]) => ({
+  const points = result.flatMap((series) => (series.values ?? []).map(([timestamp, value]) => ({
     t: Number(timestamp) * 1000,
     v: toNumber(value),
   }))).filter((point) => point.v !== null);
+  points.sort((a, b) => a.t - b.t);
+  const merged = [];
+  for (const point of points) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.t === point.t) {
+      prev.v = point.v;
+    } else {
+      merged.push({ t: point.t, v: point.v });
+    }
+  }
+  return merged;
 }
 
 function vectorValues(response) {
