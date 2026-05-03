@@ -4,12 +4,12 @@
 flowchart TB
 
   subgraph vps["AWS 常驻 VPS"]
-    CP["控制面\nNode.js API + Web UI"]
+    CP["控制面<br/>Node.js API + Web UI"]
     Nginx["Nginx 反代"]
   end
   subgraph clients["终端"]
-    Player["玩家\n（Minecraft Java 客户端）"]
-    Browser["控制面板页面\n（浏览器）"]
+    Player["玩家<br/>（Minecraft Java 客户端）"]
+    Browser["控制面板页面<br/>（浏览器）"]
   end
 
   subgraph aliyun["阿里云"]
@@ -18,15 +18,15 @@ flowchart TB
       Prom["托管 Prometheus"]
     end
 
-    POP["OpenAPI\nECI / ECS / EIP / 块存储等"]
+    POP["OpenAPI<br/>ECI / ECS / EIP / 块存储等"]
 
     subgraph compute["按需游戏运行时"]
       ECI["ECI 容器组"]
     end
 
     ACR["容器镜像服务 ACR"]
-    EIP["弹性公网 EIP\n玩家连接入口"]
-    Storage["ECS 块存储\n（游戏存档）"]
+    EIP["弹性公网 EIP<br/>玩家连接入口"]
+    Storage["ECS 块存储<br/>（游戏存档）"]
   end
 
   Browser --> Nginx
@@ -46,7 +46,7 @@ flowchart TB
 
   ECI -.->|"心跳、状态"| CP
 
-  ECI -->|"PROM_PUSHGATEWAY_URL\n指标推送"| PGW
+  ECI -->|"PROM_PUSHGATEWAY_URL<br/>指标推送"| PGW
   PGW --> Prom
   CP -->|"PROM_HTTP_API"| Prom
 ```
