@@ -211,6 +211,33 @@ export class Orchestrator {
     await rcon.command('stop');
   }
 
+  async gracefulStopAndWait(providerName, currentRuntimeId) {
+    try {
+      console.log(`[STOP] Graceful stop starting.`);
+      await this.gracefulStop();
+      console.log(`[STOP] Graceful stop RCON commands sent. Waiting up to ${this.config.runtime.stopGraceSeconds} seconds for runtime to end...`);
+      let waited = 0;
+      const checkInterval = 5;
+      while (waited < this.config.runtime.stopGraceSeconds) {
+        await sleep(checkInterval * 1000);
+        waited += checkInterval;
+        try {
+          const checkCloud = await this.provider(providerName).describeRuntime(currentRuntimeId);
+          if (runtimeAlreadyEnded(checkCloud) && !checkCloud?.missing) {
+            console.log(`[STOP] Runtime ended early at ${waited}s. Breaking wait.`);
+            break;
+          }
+        } catch (err) {
+          // Ignore transient errors during polling
+        }
+      }
+      console.log(`[STOP] Wait finished.`);
+      return null;
+    } catch (error) {
+      return error.message;
+    }
+  }
+
   async stop({ force = false } = {}) {
     return this.withLock('stop', async () => {
       const current = await this.store.read();
@@ -242,15 +269,10 @@ export class Orchestrator {
           const isMissing = Boolean(cloud?.missing);
           if (isMissing && shouldDeferMissingReset(current, this.config)) {
             console.log(`[STOP] Cloud reports missing, but deferring due to recent heartbeat. Proceeding with graceful stop.`);
-            try {
-              console.log(`[STOP] Graceful stop starting. cloud.Status=${cloud?.Status}`);
-              await this.gracefulStop();
-              console.log(`[STOP] Graceful stop RCON commands sent. Sleeping for ${this.config.runtime.stopGraceSeconds} seconds...`);
-              await sleep(this.config.runtime.stopGraceSeconds * 1000);
-              console.log(`[STOP] Sleep finished.`);
-            } catch (error) {
-              rconErrors.push(error.message);
-              await this.store.event('graceful-stop-failed', { error: error.message });
+            const err = await this.gracefulStopAndWait(providerName, current.runtimeId);
+            if (err) {
+              rconErrors.push(err);
+              await this.store.event('graceful-stop-failed', { error: err });
             }
           } else {
             console.log(`[STOP] Precheck: runtime already ended. cloud.Status=${cloud?.Status}, missing=${cloud?.missing}`);
@@ -262,15 +284,10 @@ export class Orchestrator {
             });
           }
         } else {
-          try {
-            console.log(`[STOP] Graceful stop starting. cloud.Status=${cloud?.Status}`);
-            await this.gracefulStop();
-            console.log(`[STOP] Graceful stop RCON commands sent. Sleeping for ${this.config.runtime.stopGraceSeconds} seconds...`);
-            await sleep(this.config.runtime.stopGraceSeconds * 1000);
-            console.log(`[STOP] Sleep finished.`);
-          } catch (error) {
-            rconErrors.push(error.message);
-            await this.store.event('graceful-stop-failed', { error: error.message });
+          const err = await this.gracefulStopAndWait(providerName, current.runtimeId);
+          if (err) {
+            rconErrors.push(err);
+            await this.store.event('graceful-stop-failed', { error: err });
           }
         }
       }
