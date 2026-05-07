@@ -225,6 +225,28 @@ export function renderUi() {
       chartInstances.push(chart);
     }
 
+    function drawDiskPieChart(id, usedPercent) {
+      const element = document.getElementById(id);
+      if (!element || !window.echarts) return;
+      const percent = Number(usedPercent);
+      const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+      const chart = window.echarts.init(element);
+      chart.setOption({
+        tooltip: { trigger: 'item' },
+        series: [{
+          type: 'pie',
+          radius: ['55%', '78%'],
+          avoidLabelOverlap: true,
+          label: { show: false },
+          data: [
+            { value: safePercent, name: '已用磁盘' },
+            { value: 100 - safePercent, name: '可用磁盘' },
+          ],
+        }],
+      });
+      chartInstances.push(chart);
+    }
+
     function renderPlayerRows(players) {
       if (!players?.length) return '<div class="label">当前没有在线玩家</div>';
       const max = Math.max(...players.map((player) => player.sessionSeconds ?? player.seconds), 1);
@@ -249,13 +271,13 @@ export function renderUi() {
           admin ? echartCard('chartPlayers', '在线人数', metrics.stats.playersOnline, (v) => String(v ?? '-')) : '',
           echartCard('chartCpu', 'CPU 使用（核）', latest(metrics.series.cpuCores), (v) => Number(v ?? 0).toFixed(2)),
           echartCard('chartMemory', '内存使用率', latest(metrics.series.memoryPercent), (v) => Number(v ?? 0).toFixed(1) + '%'),
-          echartCard('chartDisk', '磁盘使用率', latest(metrics.series.diskUsagePercent), (v) => Number(v ?? 0).toFixed(1) + '%'),
+          echartCard('chartDiskPie', '磁盘使用率', metrics.stats.diskUsagePercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
           echartCard('chartRx', '接收流量', latest(metrics.series.networkRxBps), formatBytes),
           echartCard('chartTx', '发送流量', latest(metrics.series.networkTxBps), formatBytes),
           admin ? echartCard('chartIdle', '空服时长', metrics.stats.idleSeconds, formatSeconds) : '',
           '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
             + formatSeconds(metrics.stats.uptimeSeconds)
-            + '</div><div class="label">RCON: '
+            + '</div><div class="metric-big">RCON: '
             + (metrics.stats.rconUp === 1 ? '正常' : '异常')
             + '</div></div>',
           admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
@@ -263,7 +285,7 @@ export function renderUi() {
         if (admin) drawLineChart('chartPlayers', '在线人数', metrics.series.playersOnline, (v) => v);
         drawLineChart('chartCpu', 'CPU 使用（核）', metrics.series.cpuCores, (v) => Number(v).toFixed(2));
         drawLineChart('chartMemory', '内存使用率', metrics.series.memoryPercent, (v) => Number(v).toFixed(1) + '%');
-        drawLineChart('chartDisk', '磁盘使用率', metrics.series.diskUsagePercent, (v) => Number(v).toFixed(1) + '%');
+        drawDiskPieChart('chartDiskPie', metrics.stats.diskUsagePercent);
         drawLineChart('chartRx', '接收流量', metrics.series.networkRxBps, formatBytes);
         drawLineChart('chartTx', '发送流量', metrics.series.networkTxBps, formatBytes);
         if (admin) drawLineChart('chartIdle', '空服时长', metrics.series.idleSeconds, formatSeconds);
@@ -274,13 +296,13 @@ export function renderUi() {
         admin ? chartCard('在线人数', metrics.stats.playersOnline, metrics.series.playersOnline, (v) => String(v ?? '-')) : '',
         chartCard('CPU 使用（核）', latest(metrics.series.cpuCores), metrics.series.cpuCores, (v) => Number(v ?? 0).toFixed(2)),
         chartCard('内存使用率', latest(metrics.series.memoryPercent), metrics.series.memoryPercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
-        chartCard('磁盘使用率', latest(metrics.series.diskUsagePercent), metrics.series.diskUsagePercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
+        '<div class="card"><div class="label">磁盘使用率</div><div class="metric-big">' + Number(metrics.stats.diskUsagePercent ?? 0).toFixed(1) + '%</div></div>',
         chartCard('接收流量', latest(metrics.series.networkRxBps), metrics.series.networkRxBps, formatBytes),
         chartCard('发送流量', latest(metrics.series.networkTxBps), metrics.series.networkTxBps, formatBytes),
         admin ? chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds) : '',
         '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
           + formatSeconds(metrics.stats.uptimeSeconds)
-          + '</div><div class="label">RCON: '
+          + '</div><div class="metric-big">RCON: '
           + (metrics.stats.rconUp === 1 ? '正常' : '异常')
           + '</div></div>',
         admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
