@@ -1,6 +1,10 @@
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(moduleDir, '..');
 
 function loadDotEnv(file = path.join(process.cwd(), '.env')) {
   if (!fs.existsSync(file)) return;
@@ -56,7 +60,8 @@ function csvEnv(name, fallback = []) {
 
 export function loadConfig() {
   loadDotEnv();
-  const dataDir = env('DATA_DIR', path.join(process.cwd(), 'data'));
+  // Keep state/audit paths stable across restarts even if CWD changes.
+  const dataDir = env('DATA_DIR', path.join(projectRoot, 'data'));
 
   return {
     app: {
