@@ -239,116 +239,129 @@ export class Orchestrator {
   }
 
   async stop({ force = false } = {}) {
-    return this.withLock('stop', async () => {
-      const current = await this.store.read();
-      if (!current.runtimeId || (!force && terminalPhase(current.phase))) {
-        return { idempotent: true, state: current };
+    const current = await this.store.read();
+    if (!current.runtimeId || (!force && terminalPhase(current.phase))) {
+      return { idempotent: true, state: current };
+    }
+    if (!force && !gracefulStopAllowed(current.phase)) {
+      return {
+        idempotent: true,
+        state: current,
+        message: `Graceful stop is disabled while server is ${current.phase}. Use force stop if the runtime must be deleted.`,
+      };
+    }
+
+    const now = Date.now();
+    if (this.lockedUntil > now) {
+      throw new Error(`Another lifecycle action is in progress: stop`);
+    }
+
+    // Set lock immediately.
+    this.lockedUntil = now + this.config.app.lockTimeoutMs;
+
+    const providerName = current.provider ?? this.config.runtime.provider;
+    const nextState = await this.store.update((state) => ({ ...state, phase: force ? 'force-stopping' : 'stopping' }));
+    await this.store.event('stop-requested', { force });
+
+    // Run the actual slow stop process in the background.
+    this._backgroundStop(nextState, providerName, force).finally(() => {
+      this.lockedUntil = 0;
+    });
+
+    return { state: nextState };
+  }
+
+  async _backgroundStop(current, providerName, force) {
+    const rconErrors = [];
+    if (!force) {
+      let cloud = null;
+      try {
+        cloud = await this.provider(providerName).describeRuntime(current.runtimeId);
+      } catch (error) {
+        await this.store.event('stop-precheck-failed', { error: error.message });
       }
-      if (!force && !gracefulStopAllowed(current.phase)) {
-        return {
-          idempotent: true,
-          state: current,
-          message: `Graceful stop is disabled while server is ${current.phase}. Use force stop if the runtime must be deleted.`,
-        };
-      }
-      const providerName = current.provider ?? this.config.runtime.provider;
 
-      await this.store.update((state) => ({ ...state, phase: force ? 'force-stopping' : 'stopping' }));
-      await this.store.event('stop-requested', { force });
-
-      const rconErrors = [];
-      if (!force) {
-        let cloud = null;
-        try {
-          cloud = await this.provider(providerName).describeRuntime(current.runtimeId);
-        } catch (error) {
-          await this.store.event('stop-precheck-failed', { error: error.message });
-        }
-
-        if (runtimeAlreadyEnded(cloud)) {
-          const isMissing = Boolean(cloud?.missing);
-          if (isMissing && shouldDeferMissingReset(current, this.config)) {
-            console.log(`[STOP] Cloud reports missing, but deferring due to recent heartbeat. Proceeding with graceful stop.`);
-            const err = await this.gracefulStopAndWait(providerName, current.runtimeId);
-            if (err) {
-              rconErrors.push(err);
-              await this.store.event('graceful-stop-failed', { error: err });
-            }
-          } else {
-            console.log(`[STOP] Precheck: runtime already ended. cloud.Status=${cloud?.Status}, missing=${cloud?.missing}`);
-            await this.store.event('stop-skip-graceful-runtime-ended', {
-              runtimeId: current.runtimeId,
-              provider: providerName,
-              status: cloud?.Status ?? cloud?.status ?? cloud?.State ?? cloud?.state ?? null,
-              missing: isMissing,
-            });
-          }
-        } else {
+      if (runtimeAlreadyEnded(cloud)) {
+        const isMissing = Boolean(cloud?.missing);
+        if (isMissing && shouldDeferMissingReset(current, this.config)) {
+          console.log(`[STOP] Cloud reports missing, but deferring due to recent heartbeat. Proceeding with graceful stop.`);
           const err = await this.gracefulStopAndWait(providerName, current.runtimeId);
           if (err) {
             rconErrors.push(err);
             await this.store.event('graceful-stop-failed', { error: err });
           }
+        } else {
+          console.log(`[STOP] Precheck: runtime already ended. cloud.Status=${cloud?.Status}, missing=${cloud?.missing}`);
+          await this.store.event('stop-skip-graceful-runtime-ended', {
+            runtimeId: current.runtimeId,
+            provider: providerName,
+            status: cloud?.Status ?? cloud?.status ?? cloud?.State ?? cloud?.state ?? null,
+            missing: isMissing,
+          });
+        }
+      } else {
+        const err = await this.gracefulStopAndWait(providerName, current.runtimeId);
+        if (err) {
+          rconErrors.push(err);
+          await this.store.event('graceful-stop-failed', { error: err });
         }
       }
+    }
 
-      // Container may already be gone; RCON then fails but the cloud record should still clear.
-      if (rconErrors.length > 0 && !force) {
-        try {
-          const described = await this.provider(providerName).describeRuntime(current.runtimeId);
-          if (described?.missing) {
-            const state = await this.store.reset({
-              phase: 'stopped',
-              provider: null,
-              runtimeId: null,
-              runtimeName: null,
-              eipAddress: this.config.aliyun.eipAddress,
-            });
-            await this.store.event('runtime-already-gone', {
-              runtimeId: current.runtimeId,
-              provider: providerName,
-              during: 'stop-after-rcon-failure',
-              rconErrors,
-            });
-            return { state, rconErrors };
-          }
-        } catch (error) {
-          await this.store.event('describe-after-rcon-failure', { error: error.message });
-        }
-        const state = await this.store.update((next) => ({
-          ...next,
-          phase: 'failed',
-          lastError: `Graceful stop failed: ${rconErrors.join('; ')}. Retry with force=true after checking logs.`,
-        }));
-        return { state, rconErrors };
-      }
-
+    // Container may already be gone; RCON then fails but the cloud record should still clear.
+    if (rconErrors.length > 0 && !force) {
       try {
-        const deleted = await this.provider(providerName).deleteRuntime(current.runtimeId);
-        const state = await this.store.reset({
-          phase: 'stopped',
-          provider: null,
-          runtimeId: null,
-          runtimeName: null,
-          eipAddress: this.config.aliyun.eipAddress,
-        });
-        await this.store.event(deleted?.missing ? 'runtime-already-gone' : 'runtime-deleted', {
-          runtimeId: current.runtimeId,
-          provider: providerName,
-          force,
-          during: 'stop',
-        });
-        return { state };
+        const described = await this.provider(providerName).describeRuntime(current.runtimeId);
+        if (described?.missing) {
+          await this.store.reset({
+            phase: 'stopped',
+            provider: null,
+            runtimeId: null,
+            runtimeName: null,
+            eipAddress: this.config.aliyun.eipAddress,
+          });
+          await this.store.event('runtime-already-gone', {
+            runtimeId: current.runtimeId,
+            provider: providerName,
+            during: 'stop-after-rcon-failure',
+            rconErrors,
+          });
+          return;
+        }
       } catch (error) {
-        const state = await this.store.update((next) => ({
-          ...next,
-          phase: 'failed',
-          lastError: error.message,
-        }));
-        await this.store.event('stop-failed', { error: error.message });
-        throw Object.assign(error, { state });
+        await this.store.event('describe-after-rcon-failure', { error: error.message });
       }
-    });
+      await this.store.update((next) => ({
+        ...next,
+        phase: 'failed',
+        lastError: `Graceful stop failed: ${rconErrors.join('; ')}. Retry with force=true after checking logs.`,
+      }));
+      return;
+    }
+
+    try {
+      const deleted = await this.provider(providerName).deleteRuntime(current.runtimeId);
+      await this.store.reset({
+        phase: 'stopped',
+        provider: null,
+        runtimeId: null,
+        runtimeName: null,
+        eipAddress: this.config.aliyun.eipAddress,
+      });
+      await this.store.event(deleted?.missing ? 'runtime-already-gone' : 'runtime-deleted', {
+        runtimeId: current.runtimeId,
+        provider: providerName,
+        force,
+        during: 'stop',
+      });
+    } catch (error) {
+      await this.store.update((next) => ({
+        ...next,
+        phase: 'failed',
+        lastError: error.message,
+      }));
+      await this.store.event('stop-failed', { error: error.message });
+    }
   }
 
   async heartbeat(payload) {
