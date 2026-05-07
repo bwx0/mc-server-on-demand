@@ -32,7 +32,8 @@ function gracefulStopAllowed(phase) {
 }
 
 function runtimeAlreadyEnded(cloud) {
-  if (!cloud || cloud.missing) return true;
+  if (!cloud) return false;
+  if (cloud.missing) return true;
   const status = String(
     cloud.Status
       ?? cloud.status
