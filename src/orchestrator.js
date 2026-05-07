@@ -31,6 +31,25 @@ function gracefulStopAllowed(phase) {
   return !['starting', 'initializing'].includes(phase);
 }
 
+function shouldDeferMissingReset(state, config) {
+  const now = Date.now();
+  const startupGraceMs = 20 * 1000;
+  const heartbeatGraceMs = Math.max(60 * 1000, Number(config.runtime.monitorIntervalMs || 30000) * 3);
+  const updatedAtMs = state.updatedAt ? new Date(state.updatedAt).getTime() : 0;
+  const lastHeartbeatMs = state.lastHeartbeatAt ? new Date(state.lastHeartbeatAt).getTime() : 0;
+
+  if (['starting', 'initializing'].includes(state.phase)) {
+    if (!updatedAtMs || Number.isNaN(updatedAtMs)) return true;
+    return now - updatedAtMs < startupGraceMs;
+  }
+
+  if (state.phase === 'running' && lastHeartbeatMs && !Number.isNaN(lastHeartbeatMs)) {
+    return now - lastHeartbeatMs < heartbeatGraceMs;
+  }
+
+  return false;
+}
+
 export class Orchestrator {
   constructor(config, pop, store) {
     this.config = config;
@@ -70,6 +89,9 @@ export class Orchestrator {
       try {
         cloud = await this.provider(state.provider).describeRuntime(state.runtimeId);
         if (cloud?.missing) {
+          if (shouldDeferMissingReset(state, this.config)) {
+            return { state, cloud: { ...cloud, deferred: true } };
+          }
           await this.store.event('runtime-already-gone', {
             runtimeId: state.runtimeId,
             provider: state.provider,
