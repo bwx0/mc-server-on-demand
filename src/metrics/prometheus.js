@@ -113,6 +113,8 @@ export class PrometheusClient {
       idleSeconds: `minecraft_idle_seconds${selector}`,
       uptimeSeconds: `minecraft_runtime_uptime_seconds${selector}`,
       diskUsagePercent: `100 * (1 - minecraft_disk_free_bytes${selector} / minecraft_disk_total_bytes${selector})`,
+      diskTotalBytes: `minecraft_disk_total_bytes${selector}`,
+      diskFreeBytes: `minecraft_disk_free_bytes${selector}`,
       cpuCores: `minecraft_container_cpu_usage_cores${selector} or minecraft_java_cpu_usage_cores${selector} or minecraft_process_cpu_usage_cores${selector}`,
       memoryPercent: `100 * minecraft_container_memory_usage_bytes${selector} / minecraft_container_memory_limit_bytes${selector}`,
       networkRxBps: `rate(minecraft_container_network_receive_bytes_total${selector}[1m])`,
@@ -134,6 +136,8 @@ export class PrometheusClient {
       idleNow,
       uptimeNow,
       diskUsageNow,
+      diskTotalNow,
+      diskFreeNow,
       playerSessionsNow,
       playerDuration7d,
     ] = await Promise.all([
@@ -149,6 +153,8 @@ export class PrometheusClient {
       this.query(queries.idleSeconds),
       this.query(queries.uptimeSeconds),
       this.query(queries.diskUsagePercent),
+      this.query(queries.diskTotalBytes),
+      this.query(queries.diskFreeBytes),
       this.query(queries.playerSessions),
       this.query(queries.playerDuration7d),
     ]);
@@ -163,6 +169,8 @@ export class PrometheusClient {
         idleSeconds: latestValue(idleNow),
         uptimeSeconds: latestValue(uptimeNow),
         diskUsagePercent: latestValue(diskUsageNow),
+        diskTotalBytes: latestValue(diskTotalNow),
+        diskFreeBytes: latestValue(diskFreeNow),
       },
       series: {
         playersOnline: rangeSeries(playersOnlineRange),

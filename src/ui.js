@@ -225,14 +225,31 @@ export function renderUi() {
       chartInstances.push(chart);
     }
 
-    function drawDiskPieChart(id, usedPercent) {
+    function drawDiskPieChart(id, usedPercent, totalBytes, freeBytes) {
       const element = document.getElementById(id);
       if (!element || !window.echarts) return;
       const percent = Number(usedPercent);
       const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+      const total = Number(totalBytes);
+      const free = Number(freeBytes);
+      const hasSize = Number.isFinite(total) && Number.isFinite(free);
+      const used = hasSize ? Math.max(0, total - free) : 0;
+
+      function toGb(bytes) {
+        return (Number(bytes) / (1024 ** 3)).toFixed(3);
+      }
       const chart = window.echarts.init(element);
       chart.setOption({
-        tooltip: { trigger: 'item' },
+        tooltip: {
+          trigger: 'item',
+          formatter: (params) => {
+            if (!hasSize) {
+              return params.name + ': ' + Number(params.value ?? 0).toFixed(1) + '%';
+            }
+            const bytes = params.name === '已用磁盘' ? used : free;
+            return params.name + ': ' + toGb(bytes) + ' GB (' + Number(params.percent ?? 0).toFixed(1) + '%)';
+          },
+        },
         series: [{
           type: 'pie',
           radius: ['55%', '78%'],
@@ -278,14 +295,19 @@ export function renderUi() {
           '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
             + formatSeconds(metrics.stats.uptimeSeconds)
             + '</div><div class="label">RCON状态</div><div class="metric-big">'
-            + (metrics.stats.rconUp === 1 ? '正常' : '异常')
+            + (metrics.stats.rconUp === 1 ? '已连接' : '未连接')
             + '</div></div>',
           admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
         ].join('');
         if (admin) drawLineChart('chartPlayers', '在线人数', metrics.series.playersOnline, (v) => v);
         drawLineChart('chartCpu', 'CPU 使用（核）', metrics.series.cpuCores, (v) => Number(v).toFixed(2));
         drawLineChart('chartMemory', '内存使用率', metrics.series.memoryPercent, (v) => Number(v).toFixed(1) + '%');
-        drawDiskPieChart('chartDiskPie', metrics.stats.diskUsagePercent);
+        drawDiskPieChart(
+          'chartDiskPie',
+          metrics.stats.diskUsagePercent,
+          metrics.stats.diskTotalBytes,
+          metrics.stats.diskFreeBytes,
+        );
         drawLineChart('chartRx', '接收流量', metrics.series.networkRxBps, formatBytes);
         drawLineChart('chartTx', '发送流量', metrics.series.networkTxBps, formatBytes);
         if (admin) drawLineChart('chartIdle', '空服时长', metrics.series.idleSeconds, formatSeconds);
@@ -303,7 +325,7 @@ export function renderUi() {
         '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
           + formatSeconds(metrics.stats.uptimeSeconds)
           + '</div><div class="label">RCON状态</div><div class="metric-big">'
-          + (metrics.stats.rconUp === 1 ? '正常' : '异常')
+          + (metrics.stats.rconUp === 1 ? '已连接' : '未连接')
           + '</div></div>',
         admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
       ].join('');
