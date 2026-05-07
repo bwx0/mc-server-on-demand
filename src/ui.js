@@ -277,7 +277,7 @@ export function renderUi() {
           admin ? echartCard('chartIdle', '空服时长', metrics.stats.idleSeconds, formatSeconds) : '',
           '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
             + formatSeconds(metrics.stats.uptimeSeconds)
-            + '</div><div class="metric-big">RCON: '
+            + '</div><div class="label">RCON状态</div><div class="metric-big">'
             + (metrics.stats.rconUp === 1 ? '正常' : '异常')
             + '</div></div>',
           admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
@@ -302,7 +302,7 @@ export function renderUi() {
         admin ? chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds) : '',
         '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
           + formatSeconds(metrics.stats.uptimeSeconds)
-          + '</div><div class="metric-big">RCON: '
+          + '</div><div class="label">RCON状态</div><div class="metric-big">'
           + (metrics.stats.rconUp === 1 ? '正常' : '异常')
           + '</div></div>',
         admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
