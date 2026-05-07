@@ -263,10 +263,17 @@ export class Orchestrator {
     const nextState = await this.store.update((state) => ({ ...state, phase: force ? 'force-stopping' : 'stopping' }));
     await this.store.event('stop-requested', { force });
 
-    // Run the actual slow stop process in the background.
-    this._backgroundStop(nextState, providerName, force).finally(() => {
+    // Run the actual stop process.
+    // If force is true, await it so the user sees the final 'stopped' state immediately.
+    // If graceful, run it in the background so the UI isn't blocked waiting for up to 90 seconds.
+    const stopPromise = this._backgroundStop(nextState, providerName, force).finally(() => {
       this.lockedUntil = 0;
     });
+
+    if (force) {
+      await stopPromise;
+      return { state: await this.store.read() };
+    }
 
     return { state: nextState };
   }
