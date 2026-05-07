@@ -31,6 +31,21 @@ function gracefulStopAllowed(phase) {
   return !['starting', 'initializing'].includes(phase);
 }
 
+function runtimeAlreadyEnded(cloud) {
+  if (!cloud || cloud.missing) return true;
+  const status = String(
+    cloud.Status
+      ?? cloud.status
+      ?? cloud.State
+      ?? cloud.state
+      ?? cloud.InstanceStatus
+      ?? cloud.instanceStatus
+      ?? '',
+  ).toLowerCase();
+  if (!status) return false;
+  return ['stopped', 'stopping', 'terminated', 'succeeded', 'failed', 'finished'].some((s) => status.includes(s));
+}
+
 function shouldDeferMissingReset(state, config) {
   const now = Date.now();
   const startupGraceMs = 20 * 1000;
@@ -88,14 +103,20 @@ export class Orchestrator {
     if (state.runtimeId && state.provider) {
       try {
         cloud = await this.provider(state.provider).describeRuntime(state.runtimeId);
-        if (cloud?.missing) {
-          if (shouldDeferMissingReset(state, this.config)) {
-            return { state, cloud: { ...cloud, deferred: true } };
-          }
-          await this.store.event('runtime-already-gone', {
+        const isMissing = Boolean(cloud?.missing);
+        if (isMissing && shouldDeferMissingReset(state, this.config)) {
+          return { state, cloud: { ...cloud, deferred: true } };
+        }
+
+        if (runtimeAlreadyEnded(cloud)) {
+          const deleted = await this.provider(state.provider).deleteRuntime(state.runtimeId).catch(() => null);
+          await this.store.event(isMissing ? 'runtime-already-gone' : 'runtime-ended-reconciled', {
             runtimeId: state.runtimeId,
             provider: state.provider,
             during: 'status',
+            phase: state.phase,
+            cloudStatus: cloud?.Status ?? cloud?.status ?? cloud?.State ?? cloud?.state ?? null,
+            deleteResult: deleted?.missing ? 'missing' : 'ok',
           });
           const stopped = await this.store.reset({
             phase: 'stopped',
@@ -196,22 +217,37 @@ export class Orchestrator {
           message: `Graceful stop is disabled while server is ${current.phase}. Use force stop if the runtime must be deleted.`,
         };
       }
+      const providerName = current.provider ?? this.config.runtime.provider;
 
       await this.store.update((state) => ({ ...state, phase: force ? 'force-stopping' : 'stopping' }));
       await this.store.event('stop-requested', { force });
 
       const rconErrors = [];
       if (!force) {
+        let cloud = null;
         try {
-          await this.gracefulStop();
-          await sleep(this.config.runtime.stopGraceSeconds * 1000);
+          cloud = await this.provider(providerName).describeRuntime(current.runtimeId);
         } catch (error) {
-          rconErrors.push(error.message);
-          await this.store.event('graceful-stop-failed', { error: error.message });
+          await this.store.event('stop-precheck-failed', { error: error.message });
+        }
+
+        if (runtimeAlreadyEnded(cloud)) {
+          await this.store.event('stop-skip-graceful-runtime-ended', {
+            runtimeId: current.runtimeId,
+            provider: providerName,
+            status: cloud?.Status ?? cloud?.status ?? cloud?.State ?? cloud?.state ?? null,
+            missing: Boolean(cloud?.missing),
+          });
+        } else {
+          try {
+            await this.gracefulStop();
+            await sleep(this.config.runtime.stopGraceSeconds * 1000);
+          } catch (error) {
+            rconErrors.push(error.message);
+            await this.store.event('graceful-stop-failed', { error: error.message });
+          }
         }
       }
-
-      const providerName = current.provider ?? this.config.runtime.provider;
 
       // Container may already be gone; RCON then fails but the cloud record should still clear.
       if (rconErrors.length > 0 && !force) {
