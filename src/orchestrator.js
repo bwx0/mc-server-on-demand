@@ -34,7 +34,7 @@ function gracefulStopAllowed(phase) {
 function shouldDeferMissingReset(state, config) {
   const now = Date.now();
   const startupGraceMs = 20 * 1000;
-  const heartbeatGraceMs = Math.max(60 * 1000, Number(config.runtime.monitorIntervalMs || 30000) * 3);
+  const heartbeatGraceMs = Math.max(20 * 1000, Number(config.runtime.monitorIntervalMs || 30000) * 3);
   const updatedAtMs = state.updatedAt ? new Date(state.updatedAt).getTime() : 0;
   const lastHeartbeatMs = state.lastHeartbeatAt ? new Date(state.lastHeartbeatAt).getTime() : 0;
 
