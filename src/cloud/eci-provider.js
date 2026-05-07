@@ -133,8 +133,12 @@ export class EciProvider {
       }
       throw error;
     }
-    const groups = response.ContainerGroups?.ContainerGroup ?? [];
-    const group = Array.isArray(groups) ? groups[0] ?? null : groups;
+    let groups = response.ContainerGroups;
+    if (groups && !Array.isArray(groups)) {
+      groups = groups.ContainerGroup;
+    }
+    const group = Array.isArray(groups) && groups.length > 0 ? groups[0] : null;
+    
     // Deleted groups sometimes disappear from the API with HTTP 200 and an empty list.
     if (!group) {
       return { missing: true, runtimeId };
