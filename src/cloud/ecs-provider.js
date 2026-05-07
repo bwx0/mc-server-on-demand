@@ -86,7 +86,11 @@ export class EcsProvider {
       InstanceIds: JSON.stringify([runtimeId]),
     });
     const instances = response.Instances?.Instance ?? [];
-    return Array.isArray(instances) ? instances[0] ?? null : instances;
+    const instance = Array.isArray(instances) ? instances[0] ?? null : instances;
+    if (!instance) {
+      return { missing: true, runtimeId };
+    }
+    return instance;
   }
 
   async deleteRuntime(runtimeId) {
@@ -102,9 +106,25 @@ export class EcsProvider {
         throw error;
       }
     }
-    return this.pop.ecs('DeleteInstance', {
-      InstanceId: runtimeId,
-      Force: true,
-    });
+    try {
+      return await this.pop.ecs('DeleteInstance', {
+        InstanceId: runtimeId,
+        Force: true,
+      });
+    } catch (error) {
+      if (ecsInstanceNotFound(error)) {
+        return { missing: true, runtimeId };
+      }
+      throw error;
+    }
   }
+}
+
+function ecsInstanceNotFound(error) {
+  const message = String(error?.message ?? '');
+  const code = String(error?.code ?? error?.Code ?? '');
+  return code.includes('NotFound')
+    || /InvalidInstanceId/i.test(code)
+    || message.includes('does not exist')
+    || /InvalidInstanceId/i.test(message);
 }

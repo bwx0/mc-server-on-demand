@@ -189,7 +189,31 @@ export class Orchestrator {
         }
       }
 
+      const providerName = current.provider ?? this.config.runtime.provider;
+
+      // Container may already be gone; RCON then fails but the cloud record should still clear.
       if (rconErrors.length > 0 && !force) {
+        try {
+          const described = await this.provider(providerName).describeRuntime(current.runtimeId);
+          if (described?.missing) {
+            const state = await this.store.reset({
+              phase: 'stopped',
+              provider: null,
+              runtimeId: null,
+              runtimeName: null,
+              eipAddress: this.config.aliyun.eipAddress,
+            });
+            await this.store.event('runtime-already-gone', {
+              runtimeId: current.runtimeId,
+              provider: providerName,
+              during: 'stop-after-rcon-failure',
+              rconErrors,
+            });
+            return { state, rconErrors };
+          }
+        } catch (error) {
+          await this.store.event('describe-after-rcon-failure', { error: error.message });
+        }
         const state = await this.store.update((next) => ({
           ...next,
           phase: 'failed',
@@ -199,7 +223,6 @@ export class Orchestrator {
       }
 
       try {
-        const providerName = current.provider ?? this.config.runtime.provider;
         const deleted = await this.provider(providerName).deleteRuntime(current.runtimeId);
         const state = await this.store.reset({
           phase: 'stopped',
