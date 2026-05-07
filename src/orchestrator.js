@@ -43,7 +43,7 @@ function runtimeAlreadyEnded(cloud) {
       ?? '',
   ).toLowerCase();
   if (!status) return false;
-  return ['stopped', 'stopping', 'terminated', 'succeeded', 'failed', 'finished'].some((s) => status.includes(s));
+  return ['stopped', 'terminated', 'succeeded', 'failed', 'finished'].some((s) => status.includes(s));
 }
 
 function shouldDeferMissingReset(state, config) {
