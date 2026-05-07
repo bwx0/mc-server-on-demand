@@ -100,6 +100,12 @@ export class Orchestrator {
 
   async status() {
     const state = await this.store.read();
+    
+    // Do not attempt to reconcile cloud state while a lifecycle action (start/stop) is holding the lock.
+    if (this.lockedUntil > Date.now()) {
+      return { state, cloud: { locked: true } };
+    }
+
     let cloud = null;
     if (state.runtimeId && state.provider) {
       try {

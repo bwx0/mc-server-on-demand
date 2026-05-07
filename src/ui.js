@@ -437,7 +437,6 @@ export function renderUi() {
         }
         errorMessage.textContent = error.message;
         errorBanner.classList.remove('hidden');
-        busyText.textContent = error.message;
       }
     }
 
