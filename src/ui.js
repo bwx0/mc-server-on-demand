@@ -58,6 +58,11 @@ export function renderUi() {
     <div class="card"><div class="label">运行实例</div><div class="value" id="runtime">-</div></div>
   </section>
 
+  <div id="errorBanner" class="card hidden" style="border-color: #991b1b; background: rgba(153, 27, 27, 0.1); margin-bottom: 20px;">
+    <div class="label" style="color: #991b1b; font-weight: bold;">错误信息</div>
+    <div id="errorMessage" style="color: #ef4444; margin-top: 8px;"></div>
+  </div>
+
   <section class="row">
     <button class="primary action" id="start">启动服务器</button>
     <button class="danger action" id="stop">安全停止</button>
@@ -97,6 +102,8 @@ export function renderUi() {
     let lastState = null;
     let lastSettings = null;
     let chartInstances = [];
+    const errorBanner = document.getElementById('errorBanner');
+    const errorMessage = document.getElementById('errorMessage');
     tokenInput.value = localStorage.getItem('controlToken') || '';
 
     function formatTime(value) {
@@ -408,6 +415,15 @@ export function renderUi() {
       document.getElementById('runtime').textContent = state.runtimeName || state.runtimeId || '-';
       document.getElementById('updatedAt').textContent = formatTime(state.updatedAt);
       document.getElementById('heartbeatAt').textContent = formatTime(state.lastHeartbeatAt);
+      
+      const err = state.lastError || data.error;
+      if (err) {
+        errorMessage.textContent = err;
+        errorBanner.classList.remove('hidden');
+      } else {
+        errorBanner.classList.add('hidden');
+      }
+
       updateIdleStopEta();
       updateButtons();
     }
@@ -418,9 +434,10 @@ export function renderUi() {
       } catch (error) {
         if (currentRole === 'admin') {
           output.textContent = error.message;
-        } else {
-          busyText.textContent = error.message;
         }
+        errorMessage.textContent = error.message;
+        errorBanner.classList.remove('hidden');
+        busyText.textContent = error.message;
       }
     }
 
