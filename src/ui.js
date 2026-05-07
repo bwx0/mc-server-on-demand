@@ -249,16 +249,21 @@ export function renderUi() {
           admin ? echartCard('chartPlayers', '在线人数', metrics.stats.playersOnline, (v) => String(v ?? '-')) : '',
           echartCard('chartCpu', 'CPU 使用（核）', latest(metrics.series.cpuCores), (v) => Number(v ?? 0).toFixed(2)),
           echartCard('chartMemory', '内存使用率', latest(metrics.series.memoryPercent), (v) => Number(v ?? 0).toFixed(1) + '%'),
+          echartCard('chartDisk', '磁盘使用率', latest(metrics.series.diskUsagePercent), (v) => Number(v ?? 0).toFixed(1) + '%'),
           echartCard('chartRx', '接收流量', latest(metrics.series.networkRxBps), formatBytes),
           echartCard('chartTx', '发送流量', latest(metrics.series.networkTxBps), formatBytes),
           admin ? echartCard('chartIdle', '空服时长', metrics.stats.idleSeconds, formatSeconds) : '',
-          '<div class="card"><div class="label">Uptime</div><div class="metric-big">' + formatSeconds(metrics.stats.uptimeSeconds) + '</div></div>',
-          '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
+          '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
+            + formatSeconds(metrics.stats.uptimeSeconds)
+            + '</div><div class="label">RCON: '
+            + (metrics.stats.rconUp === 1 ? '正常' : '异常')
+            + '</div></div>',
           admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
         ].join('');
         if (admin) drawLineChart('chartPlayers', '在线人数', metrics.series.playersOnline, (v) => v);
         drawLineChart('chartCpu', 'CPU 使用（核）', metrics.series.cpuCores, (v) => Number(v).toFixed(2));
         drawLineChart('chartMemory', '内存使用率', metrics.series.memoryPercent, (v) => Number(v).toFixed(1) + '%');
+        drawLineChart('chartDisk', '磁盘使用率', metrics.series.diskUsagePercent, (v) => Number(v).toFixed(1) + '%');
         drawLineChart('chartRx', '接收流量', metrics.series.networkRxBps, formatBytes);
         drawLineChart('chartTx', '发送流量', metrics.series.networkTxBps, formatBytes);
         if (admin) drawLineChart('chartIdle', '空服时长', metrics.series.idleSeconds, formatSeconds);
@@ -269,11 +274,15 @@ export function renderUi() {
         admin ? chartCard('在线人数', metrics.stats.playersOnline, metrics.series.playersOnline, (v) => String(v ?? '-')) : '',
         chartCard('CPU 使用（核）', latest(metrics.series.cpuCores), metrics.series.cpuCores, (v) => Number(v ?? 0).toFixed(2)),
         chartCard('内存使用率', latest(metrics.series.memoryPercent), metrics.series.memoryPercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
+        chartCard('磁盘使用率', latest(metrics.series.diskUsagePercent), metrics.series.diskUsagePercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
         chartCard('接收流量', latest(metrics.series.networkRxBps), metrics.series.networkRxBps, formatBytes),
         chartCard('发送流量', latest(metrics.series.networkTxBps), metrics.series.networkTxBps, formatBytes),
         admin ? chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds) : '',
-        '<div class="card"><div class="label">Uptime</div><div class="metric-big">' + formatSeconds(metrics.stats.uptimeSeconds) + '</div></div>',
-        '<div class="card"><div class="label">RCON</div><div class="metric-big">' + (metrics.stats.rconUp === 1 ? '正常' : '异常') + '</div></div>',
+        '<div class="card"><div class="label">运行状态</div><div class="metric-big">Uptime: '
+          + formatSeconds(metrics.stats.uptimeSeconds)
+          + '</div><div class="label">RCON: '
+          + (metrics.stats.rconUp === 1 ? '正常' : '异常')
+          + '</div></div>',
         admin ? '<div class="card"><div class="label">玩家过去 7 天累计在线时长</div>' + renderPlayerRows(metrics.playerDurations) + '</div>' : '',
       ].join('');
     }
