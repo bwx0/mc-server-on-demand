@@ -14,6 +14,7 @@ export function renderUi() {
     button.danger { background: #991b1b; color: white; border-color: #991b1b; }
     button:disabled { opacity: .5; cursor: not-allowed; }
     input { padding: 10px; border-radius: 8px; border: 1px solid #888; min-width: 280px; }
+    select { padding: 10px; border-radius: 8px; border: 1px solid #888; background: transparent; }
     pre { overflow: auto; padding: 16px; border-radius: 10px; background: rgba(127,127,127,.12); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 20px 0; }
     .card { border: 1px solid rgba(127,127,127,.35); border-radius: 12px; padding: 16px; }
@@ -64,6 +65,8 @@ export function renderUi() {
   </div>
 
   <section class="row">
+    <label for="saveSelect">存档：</label>
+    <select id="saveSelect"><option value="">加载中...</option></select>
     <button class="primary action" id="start">启动服务器</button>
     <button class="danger action" id="stop">安全停止</button>
     <button class="danger action" id="forceStop">强制释放</button>
@@ -96,12 +99,14 @@ export function renderUi() {
     const adminOnlyElements = Array.from(document.querySelectorAll('.admin-only'));
     const detailsTitle = document.getElementById('detailsTitle');
     const charts = document.getElementById('charts');
+    const saveSelect = document.getElementById('saveSelect');
     let busy = false;
     let currentPhase = 'unknown';
     let currentRole = null;
     let lastState = null;
     let lastSettings = null;
     let chartInstances = [];
+    let savesSignature = null;
     const errorBanner = document.getElementById('errorBanner');
     const errorMessage = document.getElementById('errorMessage');
     tokenInput.value = localStorage.getItem('controlToken') || '';
@@ -371,14 +376,37 @@ export function renderUi() {
       }
     }
 
+    function populateSaves(settings) {
+      const saves = settings?.saves || [];
+      const admin = currentRole === 'admin';
+      const maintenance = admin && settings?.maintenanceEnabled;
+      // Rebuild options only when the list (or maintenance availability) changes, to keep the user's selection.
+      const signature = JSON.stringify({ saves, maintenance });
+      if (signature === savesSignature) return;
+      savesSignature = signature;
+      const previous = saveSelect.value;
+      const options = saves.map((save) =>
+        '<option value="' + save.path + '">' + save.name + '</option>');
+      if (maintenance) {
+        options.push('<option value="__maintenance__">恢复镜像（维护）</option>');
+      }
+      saveSelect.innerHTML = options.join('') || '<option value="">无可用存档</option>';
+      if (previous && Array.from(saveSelect.options).some((opt) => opt.value === previous)) {
+        saveSelect.value = previous;
+      }
+    }
+
     function updateButtons() {
       const lifecycleBusy = ['starting', 'stopping', 'force-stopping'].includes(currentPhase);
       const startupPhase = ['starting', 'initializing'].includes(currentPhase);
       for (const button of actionButtons) {
         button.disabled = busy || lifecycleBusy;
       }
+      const stoppable = currentPhase !== 'stopped';
       document.getElementById('start').disabled = busy || lifecycleBusy || currentPhase === 'initializing' || currentPhase === 'running';
+      // Keep the stop button clickable for non-admins during maintenance so they get a clear prompt.
       document.getElementById('stop').disabled = busy || lifecycleBusy || startupPhase;
+      saveSelect.disabled = busy || stoppable;
     }
 
     function headers() {
@@ -409,13 +437,18 @@ export function renderUi() {
       if (!state.phase) return;
       lastState = state;
       lastSettings = data.settings || lastSettings;
+      if (lastSettings) populateSaves(lastSettings);
       currentPhase = state.phase || 'unknown';
-      document.getElementById('phase').textContent = state.phase || '-';
-      document.getElementById('players').textContent = String(state.playerCount ?? '-');
-      document.getElementById('runtime').textContent = state.runtimeName || state.runtimeId || '-';
+      const maintenance = state.mode === 'maintenance';
+      document.getElementById('phase').textContent = (maintenance ? '维护中 / ' : '') + (state.phase || '-');
+      document.getElementById('players').textContent = maintenance ? '维护中' : String(state.playerCount ?? '-');
+      const runtimeLabel = state.runtimeName || state.runtimeId || '-';
+      document.getElementById('runtime').textContent = state.saveName && !maintenance
+        ? runtimeLabel + '（' + state.saveName + '）'
+        : runtimeLabel;
       document.getElementById('updatedAt').textContent = formatTime(state.updatedAt);
-      document.getElementById('heartbeatAt').textContent = formatTime(state.lastHeartbeatAt);
-      
+      document.getElementById('heartbeatAt').textContent = maintenance ? 'N/A' : formatTime(state.lastHeartbeatAt);
+
       const err = state.lastError || data.error;
       if (err) {
         errorMessage.textContent = err;
@@ -424,8 +457,25 @@ export function renderUi() {
         errorBanner.classList.add('hidden');
       }
 
+      if (maintenance) renderMaintenance(state);
       updateIdleStopEta();
       updateButtons();
+    }
+
+    function renderMaintenance(state) {
+      disposeCharts();
+      const expiresAt = state.maintenanceExpiresAt ? formatTime(state.maintenanceExpiresAt) : '-';
+      const downloadPath = lastSettings?.maintenanceNginxPath || '/nRxcU/filedownload';
+      const host = state.eipAddress || '<服务器IP>';
+      charts.innerHTML = [
+        '<div class="card"><div class="label">运行模式</div><div class="metric-big">维护 / 恢复镜像</div>'
+          + '<div class="label">RCON状态</div><div class="metric-big">N/A</div></div>',
+        '<div class="card"><div class="label">自动释放时间</div><div class="metric-big">' + expiresAt + '</div>'
+          + '<div class="label">到时将强制释放实例</div></div>',
+        '<div class="card"><div class="label">文件下载（nginx 映射 /data）</div>'
+          + '<div class="metric-big" style="font-size:16px;word-break:break-all;">http://' + host + downloadPath + '/</div>'
+          + '<div class="label">可 SSH 登录实例进行存档操作</div></div>',
+      ].join('');
     }
 
     async function runAction(fn) {
@@ -447,6 +497,8 @@ export function renderUi() {
     }
 
     async function loadMetrics() {
+      // In maintenance mode there are no metrics; renderMaintenance owns the charts area.
+      if (lastState?.mode === 'maintenance') return;
       try { renderMetrics(await request('/api/metrics/dashboard', {}, '刷新监控中...', false)); }
       catch (error) { charts.innerHTML = '<div class="card">' + error.message + '</div>'; }
     }
@@ -457,8 +509,20 @@ export function renderUi() {
     };
     document.getElementById('refresh').onclick = load;
     document.getElementById('preflight').onclick = () => runAction(() => request('/api/preflight', {}, '预检中...'));
-    document.getElementById('start').onclick = () => runAction(() => request('/api/start', { method: 'POST', body: '{}' }, '启动中...'));
-    document.getElementById('stop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: false }) }, '安全停止中...'));
+    document.getElementById('start').onclick = () => {
+      const selected = saveSelect.value;
+      const isMaintenance = selected === '__maintenance__';
+      const body = isMaintenance ? { mode: 'maintenance' } : { mode: 'normal', save: selected };
+      const label = isMaintenance ? '启动维护镜像中...' : '启动中...';
+      return runAction(() => request('/api/start', { method: 'POST', body: JSON.stringify(body) }, label));
+    };
+    document.getElementById('stop').onclick = () => {
+      if (lastState?.mode === 'maintenance' && currentRole !== 'admin') {
+        alert('服务器维护中，仅管理员可停止。');
+        return undefined;
+      }
+      return runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: false }) }, '安全停止中...'));
+    };
     document.getElementById('forceStop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: true }) }, '强制释放中...'));
     load();
     loadMetrics();

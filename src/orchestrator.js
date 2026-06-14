@@ -145,11 +145,32 @@ export class Orchestrator {
     return runPreflight(this.config, this.pop);
   }
 
-  async start() {
+  resolveSave(savePath) {
+    const saves = this.config.runtime.saves ?? [];
+    if (!savePath) return saves[0] ?? { name: '默认存档', path: this.config.runtime.defaultSavePath };
+    const match = saves.find((save) => save.path === savePath);
+    if (!match) {
+      throw new Error(`Unknown save: ${savePath}`);
+    }
+    return match;
+  }
+
+  async start(options = {}) {
     return this.withLock('start', async () => {
       const existing = await this.store.read();
       if (!canStart(existing)) {
         return { idempotent: true, state: existing };
+      }
+
+      const mode = options.mode === 'maintenance' ? 'maintenance' : 'normal';
+      let save = null;
+      if (mode === 'maintenance') {
+        if (!this.config.runtime.maintenanceImage) {
+          const error = new Error('维护镜像未配置（MAINTENANCE_IMAGE）。');
+          throw error;
+        }
+      } else {
+        save = this.resolveSave(options.savePath);
       }
 
       const preflight = await this.preflight();
@@ -167,24 +188,36 @@ export class Orchestrator {
         ...current,
         phase: 'starting',
         provider: this.config.runtime.provider,
+        mode,
+        saveName: save?.name ?? null,
+        savePath: save?.path ?? null,
+        maintenanceExpiresAt: null,
         lastError: null,
       }));
-      await this.store.event('start-requested', { provider: this.config.runtime.provider });
+      await this.store.event('start-requested', { provider: this.config.runtime.provider, mode, save: save?.path ?? null });
 
       try {
-        const runtime = await this.provider().createRuntime();
+        const runtime = await this.provider().createRuntime({ mode, savePath: save?.path });
+        const maintenanceExpiresAt = mode === 'maintenance'
+          ? new Date(Date.now() + this.config.runtime.maintenanceTimeoutMinutes * 60 * 1000).toISOString()
+          : null;
         const state = await this.store.update((current) => ({
           ...current,
-          phase: 'initializing',
+          // Maintenance image sends no heartbeat, so mark it running immediately.
+          phase: mode === 'maintenance' ? 'running' : 'initializing',
           provider: runtime.provider,
           runtimeId: runtime.runtimeId,
           runtimeName: runtime.runtimeName,
+          mode,
+          saveName: save?.name ?? null,
+          savePath: save?.path ?? null,
+          maintenanceExpiresAt,
           eipAddress: this.config.aliyun.eipAddress,
           zeroPlayersSince: null,
           idleAlertSentAt: null,
           lastError: null,
         }));
-        await this.store.event('runtime-created', runtime);
+        await this.store.event('runtime-created', { ...runtime, raw: undefined });
         return { preflight, runtime, state };
       } catch (error) {
         const state = await this.store.update((current) => ({
@@ -196,6 +229,18 @@ export class Orchestrator {
         throw Object.assign(error, { state });
       }
     });
+  }
+
+  async tickMaintenance() {
+    const state = await this.store.read();
+    if (state.mode !== 'maintenance' || !state.runtimeId || !state.maintenanceExpiresAt) return;
+    if (this.lockedUntil > Date.now()) return;
+    if (Date.now() < new Date(state.maintenanceExpiresAt).getTime()) return;
+    await this.store.event('maintenance-timeout-stop', {
+      runtimeId: state.runtimeId,
+      expiresAt: state.maintenanceExpiresAt,
+    });
+    await this.stop({ force: true });
   }
 
   async gracefulStop() {
@@ -260,17 +305,19 @@ export class Orchestrator {
     this.lockedUntil = now + this.config.app.lockTimeoutMs;
 
     const providerName = current.provider ?? this.config.runtime.provider;
-    const nextState = await this.store.update((state) => ({ ...state, phase: force ? 'force-stopping' : 'stopping' }));
-    await this.store.event('stop-requested', { force });
+    // Maintenance runtime has no Minecraft/RCON, so it is deleted directly without a graceful wait.
+    const skipGraceful = force || current.mode === 'maintenance';
+    const nextState = await this.store.update((state) => ({ ...state, phase: skipGraceful ? 'force-stopping' : 'stopping' }));
+    await this.store.event('stop-requested', { force, mode: current.mode });
 
     // Run the actual stop process.
-    // If force is true, await it so the user sees the final 'stopped' state immediately.
-    // If graceful, run it in the background so the UI isn't blocked waiting for up to 90 seconds.
-    const stopPromise = this._backgroundStop(nextState, providerName, force).finally(() => {
+    // If we skip the graceful wait, await it so the user sees the final 'stopped' state immediately.
+    // Otherwise run it in the background so the UI isn't blocked waiting for up to 90 seconds.
+    const stopPromise = this._backgroundStop(nextState, providerName, skipGraceful).finally(() => {
       this.lockedUntil = 0;
     });
 
-    if (force) {
+    if (skipGraceful) {
       await stopPromise;
       return { state: await this.store.read() };
     }

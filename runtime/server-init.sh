@@ -2,11 +2,15 @@
 set -euo pipefail
 
 DATA_DIR="${DATA_DIR:-/data}"
-MC_DIR="${MC_DIR:-/data/mc}"
-RUN_SCRIPT="${RUN_SCRIPT:-/data/mc/run.sh}"
+# MC_SAVE_SUBDIR selects which save folder under DATA_DIR to launch (multi-save support).
+MC_SAVE_SUBDIR="${MC_SAVE_SUBDIR:-mc}"
+MC_DIR="${MC_DIR:-$DATA_DIR/$MC_SAVE_SUBDIR}"
+RUN_SCRIPT="${RUN_SCRIPT:-$MC_DIR/run.sh}"
 MONITOR_SCRIPT="${MONITOR_SCRIPT:-/opt/mc-monitor/monitor.mjs}"
 JAVA_XMS="${JAVA_XMS:-2G}"
 JAVA_XMX="${JAVA_XMX:-12G}"
+
+echo "Starting Minecraft save '${MC_SAVE_SUBDIR}' from ${MC_DIR}"
 
 mkdir -p "$MC_DIR"
 cd "$MC_DIR"

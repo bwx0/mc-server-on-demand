@@ -58,10 +58,30 @@ function csvEnv(name, fallback = []) {
   return raw.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+// MC_SAVES format: "displayName:relativePath" pairs separated by commas.
+// Example: MC_SAVES=经典:mc,魔法:magic
+function parseSaves(name, fallback) {
+  const raw = env(name);
+  if (!raw) return fallback;
+  const saves = raw.split(',').map((item) => {
+    const trimmed = item.trim();
+    if (!trimmed) return null;
+    const index = trimmed.indexOf(':');
+    if (index === -1) return { name: trimmed, path: trimmed };
+    const display = trimmed.slice(0, index).trim();
+    const relativePath = trimmed.slice(index + 1).trim();
+    if (!display || !relativePath) return null;
+    return { name: display, path: relativePath };
+  }).filter(Boolean);
+  return saves.length > 0 ? saves : fallback;
+}
+
 export function loadConfig() {
   loadDotEnv();
   // Keep state/audit paths stable across restarts even if CWD changes.
   const dataDir = env('DATA_DIR', path.join(projectRoot, 'data'));
+
+  const saves = parseSaves('MC_SAVES', [{ name: '默认存档', path: 'mc' }]);
 
   return {
     app: {
@@ -113,6 +133,14 @@ export function loadConfig() {
       promPushMethod: env('PROM_PUSH_METHOD', 'POST'),
       promJob: env('PROM_JOB', 'minecraft'),
       promServerLabel: env('PROM_SERVER_LABEL', 'mc'),
+      saves,
+      defaultSavePath: saves[0]?.path ?? 'mc',
+      maintenanceImage: env('MAINTENANCE_IMAGE'),
+      maintenanceCommand: env('MAINTENANCE_COMMAND'),
+      maintenanceTimeoutMinutes: numberEnv('MAINTENANCE_TIMEOUT_MINUTES', 60),
+      maintenanceNginxPath: env('MAINTENANCE_NGINX_PATH', '/nRxcU/filedownload'),
+      maintenanceSshPassword: env('SSH_ROOT_PASSWORD'),
+      maintenanceSshAuthorizedKeys: env('SSH_AUTHORIZED_KEYS'),
     },
     storage: {
       mode: env('STORAGE_MODE', 'cloud-disk'),

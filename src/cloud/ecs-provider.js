@@ -2,7 +2,7 @@ function compact(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
-function userData(config) {
+function userData(config, savePath) {
   const script = `#!/usr/bin/env bash
 set -euo pipefail
 mkdir -p ${config.storage.mountPath}
@@ -15,6 +15,7 @@ done
 mountpoint -q ${config.storage.mountPath} || mount "$disk" ${config.storage.mountPath}
 export CONTROL_PLANE_URL="${config.app.publicBaseUrl}"
 export RUNTIME_TOKEN="${config.app.runtimeToken}"
+export MC_SAVE_SUBDIR="${savePath}"
 cd ${config.storage.mountPath}
 exec ${config.storage.mountPath}/server-init.sh
 `;
@@ -27,7 +28,10 @@ export class EcsProvider {
     this.pop = pop;
   }
 
-  async createRuntime() {
+  async createRuntime(options = {}) {
+    if (options.mode === 'maintenance') {
+      throw new Error('Maintenance/recovery mode is only supported on the ECI provider.');
+    }
     if (!this.config.ecsFallback.enabled && this.config.runtime.provider !== 'ecs') {
       throw new Error('ECS fallback is disabled. Set ECS_FALLBACK_ENABLED=true or RUNTIME_PROVIDER=ecs.');
     }
@@ -35,6 +39,7 @@ export class EcsProvider {
       throw new Error('ECS_IMAGE_ID is required for ECS runtime.');
     }
 
+    const savePath = options.savePath ?? this.config.runtime.defaultSavePath;
     const name = `${this.config.runtime.namePrefix}-${Date.now()}`;
     const run = await this.pop.ecs('RunInstances', compact({
       ImageId: this.config.ecsFallback.imageId,
@@ -50,7 +55,7 @@ export class EcsProvider {
       SystemDiskCategory: this.config.ecsFallback.systemDiskCategory,
       SystemDiskSize: this.config.ecsFallback.systemDiskSize,
       KeyPairName: this.config.ecsFallback.keyPairName,
-      UserData: userData(this.config),
+      UserData: userData(this.config, savePath),
       ...this.pop.tags('Tag'),
     }));
     const instanceId = run.InstanceIdSets?.InstanceIdSet?.[0];
@@ -76,6 +81,8 @@ export class EcsProvider {
       provider: 'ecs',
       runtimeId: instanceId,
       runtimeName: name,
+      mode: 'normal',
+      savePath,
       raw: run,
     };
   }

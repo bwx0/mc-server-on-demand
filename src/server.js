@@ -86,6 +86,10 @@ function publicState(state) {
     provider: state.provider,
     runtimeName: state.runtimeName,
     eipAddress: state.eipAddress,
+    mode: state.mode,
+    saveName: state.saveName,
+    savePath: state.savePath,
+    maintenanceExpiresAt: state.maintenanceExpiresAt,
     players: state.players,
     playerCount: state.playerCount,
     zeroPlayersSince: state.zeroPlayersSince,
@@ -100,6 +104,10 @@ function publicSettings() {
   return {
     idleAutoStop: config.runtime.idleAutoStop,
     idleStopMinutes: config.runtime.idleStopMinutes,
+    saves: config.runtime.saves,
+    maintenanceEnabled: Boolean(config.runtime.maintenanceImage),
+    maintenanceTimeoutMinutes: config.runtime.maintenanceTimeoutMinutes,
+    maintenanceNginxPath: config.runtime.maintenanceNginxPath,
   };
 }
 
@@ -197,13 +205,30 @@ async function route(req, res) {
   }
 
   if (url.pathname === '/api/start' && req.method === 'POST') {
-    const result = await auditedPageOperation(req, 'start', {}, () => orchestrator.start());
+    const body = await readJson(req);
+    const mode = body.mode === 'maintenance' ? 'maintenance' : 'normal';
+    if (mode === 'maintenance') {
+      requireAdmin(req);
+    }
+    const result = await auditedPageOperation(
+      req,
+      mode === 'maintenance' ? 'start-maintenance' : 'start',
+      { mode, save: body.save ?? null },
+      () => orchestrator.start({ mode, savePath: body.save }),
+    );
     return send(res, 200, responseForRole(result, role));
   }
 
   if (url.pathname === '/api/stop' && req.method === 'POST') {
     const body = await readJson(req);
     const force = body.force === true;
+    // Only admins may stop a maintenance/recovery runtime.
+    const current = await store.read();
+    if (current.mode === 'maintenance' && req.controlRole !== 'admin') {
+      const error = new Error('服务器维护中，仅管理员可停止。');
+      error.status = 403;
+      throw error;
+    }
     const result = await auditedPageOperation(req, force ? 'force-stop' : 'graceful-stop', { force }, () => orchestrator.stop({ force }));
     return send(res, 200, responseForRole(result, role));
   }
@@ -230,3 +255,10 @@ const server = http.createServer((req, res) => {
 server.listen(config.app.port, config.app.host, () => {
   console.log(`Control plane listening on http://${config.app.host}:${config.app.port}`);
 });
+
+// Periodically force-release an expired maintenance runtime even if nobody is watching the UI.
+setInterval(() => {
+  orchestrator.tickMaintenance().catch((error) => {
+    console.error(`maintenance tick failed: ${error.message}`);
+  });
+}, 60 * 1000);

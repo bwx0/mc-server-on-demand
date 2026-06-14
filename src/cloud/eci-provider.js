@@ -38,20 +38,55 @@ function commandParams(command) {
   };
 }
 
-function promEnvParams(config, startIndex) {
-  if (!config.runtime.promPushgatewayUrl) return {};
-  return {
-    [`Container.1.EnvironmentVar.${startIndex}.Key`]: 'PROM_PUSHGATEWAY_URL',
-    [`Container.1.EnvironmentVar.${startIndex}.Value`]: config.runtime.promPushgatewayUrl,
-    [`Container.1.EnvironmentVar.${startIndex + 1}.Key`]: 'PROM_PUSH_INTERVAL_MS',
-    [`Container.1.EnvironmentVar.${startIndex + 1}.Value`]: String(config.runtime.promPushIntervalMs),
-    [`Container.1.EnvironmentVar.${startIndex + 2}.Key`]: 'PROM_PUSH_METHOD',
-    [`Container.1.EnvironmentVar.${startIndex + 2}.Value`]: config.runtime.promPushMethod,
-    [`Container.1.EnvironmentVar.${startIndex + 3}.Key`]: 'PROM_JOB',
-    [`Container.1.EnvironmentVar.${startIndex + 3}.Value`]: config.runtime.promJob,
-    [`Container.1.EnvironmentVar.${startIndex + 4}.Key`]: 'PROM_SERVER_LABEL',
-    [`Container.1.EnvironmentVar.${startIndex + 4}.Value`]: config.runtime.promServerLabel,
-  };
+// Builds Container.1.EnvironmentVar.N.Key/Value params from a list, skipping empty values.
+function envParams(envVars) {
+  const params = {};
+  let index = 1;
+  for (const { key, value } of envVars) {
+    if (value === undefined || value === null || value === '') continue;
+    params[`Container.1.EnvironmentVar.${index}.Key`] = key;
+    params[`Container.1.EnvironmentVar.${index}.Value`] = String(value);
+    index += 1;
+  }
+  return params;
+}
+
+function normalRuntimeEnv(config, savePath) {
+  const envVars = [
+    { key: 'RUNTIME_TOKEN', value: config.app.runtimeToken },
+    { key: 'CONTROL_PLANE_URL', value: config.app.publicBaseUrl },
+    { key: 'MC_SAVE_SUBDIR', value: savePath },
+    { key: 'MINECRAFT_RCON_PORT', value: String(config.runtime.rconPort) },
+    { key: 'MINECRAFT_RCON_PASSWORD', value: config.runtime.rconPassword },
+    { key: 'MONITOR_INTERVAL_MS', value: String(config.runtime.monitorIntervalMs) },
+    { key: 'MONITOR_DEBUG', value: String(config.runtime.monitorDebug) },
+    { key: 'IDLE_AUTO_STOP', value: String(config.runtime.idleAutoStop) },
+    { key: 'IDLE_STOP_MINUTES', value: String(config.runtime.idleStopMinutes) },
+    { key: 'LOCAL_STOP_EXIT_GRACE_SECONDS', value: String(config.runtime.localStopExitGraceSeconds) },
+  ];
+  if (config.runtime.promPushgatewayUrl) {
+    envVars.push(
+      { key: 'PROM_PUSHGATEWAY_URL', value: config.runtime.promPushgatewayUrl },
+      { key: 'PROM_PUSH_INTERVAL_MS', value: String(config.runtime.promPushIntervalMs) },
+      { key: 'PROM_PUSH_METHOD', value: config.runtime.promPushMethod },
+      { key: 'PROM_JOB', value: config.runtime.promJob },
+      { key: 'PROM_SERVER_LABEL', value: config.runtime.promServerLabel },
+    );
+  }
+  return envVars;
+}
+
+// Maintenance image (ssh/python/nginx) gets no monitor/RCON/prom env; just the data path,
+// nginx mapping and optional SSH credentials. envParams() drops empty values automatically.
+function maintenanceRuntimeEnv(config) {
+  return [
+    { key: 'MAINTENANCE_MODE', value: 'true' },
+    { key: 'DATA_DIR', value: config.storage.mountPath },
+    { key: 'MAINTENANCE_NGINX_PATH', value: config.runtime.maintenanceNginxPath },
+    { key: 'MAINTENANCE_TIMEOUT_MINUTES', value: String(config.runtime.maintenanceTimeoutMinutes) },
+    { key: 'SSH_ROOT_PASSWORD', value: config.runtime.maintenanceSshPassword },
+    { key: 'SSH_AUTHORIZED_KEYS', value: config.runtime.maintenanceSshAuthorizedKeys },
+  ];
 }
 
 function isNotFound(error) {
@@ -69,8 +104,21 @@ export class EciProvider {
     this.pop = pop;
   }
 
-  async createRuntime() {
-    const name = `${this.config.runtime.namePrefix}-${Date.now()}`;
+  async createRuntime(options = {}) {
+    const mode = options.mode ?? 'normal';
+    const isMaintenance = mode === 'maintenance';
+    const savePath = options.savePath ?? this.config.runtime.defaultSavePath;
+
+    const image = isMaintenance ? this.config.runtime.maintenanceImage : this.config.runtime.image;
+    if (isMaintenance && !image) {
+      throw new Error('MAINTENANCE_IMAGE is required to start the maintenance/recovery runtime.');
+    }
+    const command = isMaintenance ? this.config.runtime.maintenanceCommand : this.config.runtime.command;
+    const envVars = isMaintenance
+      ? maintenanceRuntimeEnv(this.config)
+      : normalRuntimeEnv(this.config, savePath);
+
+    const name = `${this.config.runtime.namePrefix}-${isMaintenance ? 'maint-' : ''}${Date.now()}`;
     const response = await this.pop.eci('CreateContainerGroup', compact({
       ZoneId: this.config.aliyun.zoneId,
       VSwitchId: this.config.aliyun.vSwitchId,
@@ -81,33 +129,15 @@ export class EciProvider {
       RestartPolicy: this.config.runtime.restartPolicy,
       EipInstanceId: this.config.aliyun.eipInstanceId,
       ResourceGroupId: this.config.aliyun.resourceGroupId,
-      'Container.1.Name': 'minecraft',
-      'Container.1.Image': this.config.runtime.image,
+      'Container.1.Name': isMaintenance ? 'maintenance' : 'minecraft',
+      'Container.1.Image': image,
       'Container.1.ImagePullPolicy': this.config.runtime.imagePullPolicy,
       'Container.1.Port.1.Port': this.config.runtime.minecraftPort,
       'Container.1.Port.1.Protocol': 'TCP',
       'Container.1.VolumeMount.1.Name': 'mc-data',
       'Container.1.VolumeMount.1.MountPath': this.config.storage.mountPath,
-      'Container.1.EnvironmentVar.1.Key': 'RUNTIME_TOKEN',
-      'Container.1.EnvironmentVar.1.Value': this.config.app.runtimeToken,
-      'Container.1.EnvironmentVar.2.Key': 'CONTROL_PLANE_URL',
-      'Container.1.EnvironmentVar.2.Value': this.config.app.publicBaseUrl,
-      'Container.1.EnvironmentVar.3.Key': 'MINECRAFT_RCON_PORT',
-      'Container.1.EnvironmentVar.3.Value': String(this.config.runtime.rconPort),
-      'Container.1.EnvironmentVar.4.Key': 'MINECRAFT_RCON_PASSWORD',
-      'Container.1.EnvironmentVar.4.Value': this.config.runtime.rconPassword,
-      'Container.1.EnvironmentVar.5.Key': 'MONITOR_INTERVAL_MS',
-      'Container.1.EnvironmentVar.5.Value': String(this.config.runtime.monitorIntervalMs),
-      'Container.1.EnvironmentVar.6.Key': 'MONITOR_DEBUG',
-      'Container.1.EnvironmentVar.6.Value': String(this.config.runtime.monitorDebug),
-      'Container.1.EnvironmentVar.7.Key': 'IDLE_AUTO_STOP',
-      'Container.1.EnvironmentVar.7.Value': String(this.config.runtime.idleAutoStop),
-      'Container.1.EnvironmentVar.8.Key': 'IDLE_STOP_MINUTES',
-      'Container.1.EnvironmentVar.8.Value': String(this.config.runtime.idleStopMinutes),
-      'Container.1.EnvironmentVar.9.Key': 'LOCAL_STOP_EXIT_GRACE_SECONDS',
-      'Container.1.EnvironmentVar.9.Value': String(this.config.runtime.localStopExitGraceSeconds),
-      ...promEnvParams(this.config, 10),
-      ...commandParams(this.config.runtime.command),
+      ...envParams(envVars),
+      ...commandParams(command),
       ...eciVolumeParams(this.config),
       ...this.pop.tags(),
     }));
@@ -116,6 +146,8 @@ export class EciProvider {
       provider: 'eci',
       runtimeId: response.ContainerGroupId,
       runtimeName: name,
+      mode,
+      savePath: isMaintenance ? null : savePath,
       raw: response,
     };
   }
