@@ -237,15 +237,15 @@ export function renderUi() {
       chartInstances.push(chart);
     }
 
-    function drawDiskPieChart(id, usedPercent, totalBytes, freeBytes) {
+    function drawDiskPieChart(id, usedPercent, totalBytes, availableBytes) {
       const element = document.getElementById(id);
       if (!element || !window.echarts) return;
       const percent = Number(usedPercent);
       const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
       const total = Number(totalBytes);
-      const free = Number(freeBytes);
-      const hasSize = Number.isFinite(total) && Number.isFinite(free);
-      const used = hasSize ? Math.max(0, total - free) : 0;
+      const available = Number(availableBytes);
+      const hasSize = Number.isFinite(total) && Number.isFinite(available);
+      const used = hasSize ? Math.max(0, total - available) : 0;
 
       function toGb(bytes) {
         return (Number(bytes) / (1024 ** 3)).toFixed(3);
@@ -258,7 +258,7 @@ export function renderUi() {
             if (!hasSize) {
               return params.name + ': ' + Number(params.value ?? 0).toFixed(1) + '%';
             }
-            const bytes = params.name === '已用磁盘' ? used : free;
+            const bytes = params.name === '已用磁盘' ? used : available;
             return params.name + ': ' + toGb(bytes) + ' GB (' + Number(params.percent ?? 0).toFixed(1) + '%)';
           },
         },
@@ -269,7 +269,7 @@ export function renderUi() {
           label: { show: false },
           data: [
             { value: safePercent, name: '已用磁盘' },
-            { value: 100 - safePercent, name: '可用磁盘' },
+            { value: 100 - safePercent, name: '剩余空间' },
           ],
         }],
       });
@@ -300,7 +300,7 @@ export function renderUi() {
           admin ? echartCard('chartPlayers', '在线人数', metrics.stats.playersOnline, (v) => String(v ?? '-')) : '',
           echartCard('chartCpu', 'CPU 使用（核）', latest(metrics.series.cpuCores), (v) => Number(v ?? 0).toFixed(2)),
           echartCard('chartMemory', '内存使用率', latest(metrics.series.memoryPercent), (v) => Number(v ?? 0).toFixed(1) + '%'),
-          echartCard('chartDiskPie', '磁盘使用率', metrics.stats.diskUsagePercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
+          echartCard('chartDiskPie', '磁盘使用率 (/data)', metrics.stats.diskUsagePercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
           echartCard('chartRx', '接收流量', latest(metrics.series.networkRxBps), formatBytes),
           echartCard('chartTx', '发送流量', latest(metrics.series.networkTxBps), formatBytes),
           admin ? echartCard('chartIdle', '空服时长', metrics.stats.idleSeconds, formatSeconds) : '',
@@ -318,7 +318,7 @@ export function renderUi() {
           'chartDiskPie',
           metrics.stats.diskUsagePercent,
           metrics.stats.diskTotalBytes,
-          metrics.stats.diskFreeBytes,
+          metrics.stats.diskAvailableBytes,
         );
         drawLineChart('chartRx', '接收流量', metrics.series.networkRxBps, formatBytes);
         drawLineChart('chartTx', '发送流量', metrics.series.networkTxBps, formatBytes);
@@ -330,7 +330,7 @@ export function renderUi() {
         admin ? chartCard('在线人数', metrics.stats.playersOnline, metrics.series.playersOnline, (v) => String(v ?? '-')) : '',
         chartCard('CPU 使用（核）', latest(metrics.series.cpuCores), metrics.series.cpuCores, (v) => Number(v ?? 0).toFixed(2)),
         chartCard('内存使用率', latest(metrics.series.memoryPercent), metrics.series.memoryPercent, (v) => Number(v ?? 0).toFixed(1) + '%'),
-        '<div class="card"><div class="label">磁盘使用率</div><div class="metric-big">' + Number(metrics.stats.diskUsagePercent ?? 0).toFixed(1) + '%</div></div>',
+        '<div class="card"><div class="label">磁盘使用率 (/data)</div><div class="metric-big">' + Number(metrics.stats.diskUsagePercent ?? 0).toFixed(1) + '%</div></div>',
         chartCard('接收流量', latest(metrics.series.networkRxBps), metrics.series.networkRxBps, formatBytes),
         chartCard('发送流量', latest(metrics.series.networkTxBps), metrics.series.networkTxBps, formatBytes),
         admin ? chartCard('空服时长', metrics.stats.idleSeconds, metrics.series.idleSeconds, formatSeconds) : '',
@@ -466,15 +466,18 @@ export function renderUi() {
       disposeCharts();
       const expiresAt = state.maintenanceExpiresAt ? formatTime(state.maintenanceExpiresAt) : '-';
       const downloadPath = lastSettings?.maintenanceNginxPath || '/nRxcU/filedownload';
-      const host = state.eipAddress || '<服务器IP>';
+      const admin = currentRole === 'admin';
+      const downloadUrl = admin && state.eipAddress
+        ? 'http://' + state.eipAddress + downloadPath + '/'
+        : '';
       charts.innerHTML = [
         '<div class="card"><div class="label">运行模式</div><div class="metric-big">维护 / 恢复镜像</div>'
           + '<div class="label">RCON状态</div><div class="metric-big">N/A</div></div>',
         '<div class="card"><div class="label">自动释放时间</div><div class="metric-big">' + expiresAt + '</div>'
           + '<div class="label">到时将强制释放实例</div></div>',
         '<div class="card"><div class="label">文件下载（nginx 映射 /data）</div>'
-          + '<div class="metric-big" style="font-size:16px;word-break:break-all;">http://' + host + downloadPath + '/</div>'
-          + '<div class="label">可 SSH 登录实例进行存档操作</div></div>',
+          + '<div class="metric-big" style="font-size:16px;word-break:break-all;">' + (downloadUrl || '-') + '</div>'
+          + (admin ? '<div class="label">可 SSH 登录实例进行存档操作</div>' : ''),
       ].join('');
     }
 
@@ -497,17 +500,29 @@ export function renderUi() {
     }
 
     async function loadMetrics() {
-      // In maintenance mode there are no metrics; renderMaintenance owns the charts area.
       if (lastState?.mode === 'maintenance') return;
-      try { renderMetrics(await request('/api/metrics/dashboard', {}, '刷新监控中...', false)); }
-      catch (error) { charts.innerHTML = '<div class="card">' + error.message + '</div>'; }
+      try {
+        const data = await request('/api/metrics/dashboard', {}, '刷新监控中...', false);
+        // Status refresh may have switched to maintenance while this request was in flight.
+        if (lastState?.mode === 'maintenance') return;
+        renderMetrics(data);
+      } catch (error) {
+        if (lastState?.mode === 'maintenance') return;
+        charts.innerHTML = '<div class="card">' + error.message + '</div>';
+      }
     }
 
     document.getElementById('saveToken').onclick = () => {
       localStorage.setItem('controlToken', tokenInput.value);
       load();
     };
-    document.getElementById('refresh').onclick = load;
+    document.getElementById('refresh').onclick = () => {
+      load().then(() => {
+        if (lastState?.mode === 'maintenance') {
+          renderMaintenance(lastState);
+        }
+      });
+    };
     document.getElementById('preflight').onclick = () => runAction(() => request('/api/preflight', {}, '预检中...'));
     document.getElementById('start').onclick = () => {
       const selected = saveSelect.value;
@@ -524,8 +539,7 @@ export function renderUi() {
       return runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: false }) }, '安全停止中...'));
     };
     document.getElementById('forceStop').onclick = () => runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: true }) }, '强制释放中...'));
-    load();
-    loadMetrics();
+    load().then(() => loadMetrics());
     setInterval(load, 15000);
     setInterval(loadMetrics, 30000);
     setInterval(updateIdleStopEta, 1000);

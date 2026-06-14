@@ -112,9 +112,10 @@ export class PrometheusClient {
       rconUp: `minecraft_rcon_up${selector}`,
       idleSeconds: `minecraft_idle_seconds${selector}`,
       uptimeSeconds: `minecraft_runtime_uptime_seconds${selector}`,
-      diskUsagePercent: `100 * (1 - minecraft_disk_free_bytes${selector} / minecraft_disk_total_bytes${selector})`,
+      // Use available_bytes (bavail on /data mount) for remaining usable space, not container root fs.
+      diskUsagePercent: `100 * (1 - minecraft_disk_available_bytes${selector} / minecraft_disk_total_bytes${selector})`,
       diskTotalBytes: `minecraft_disk_total_bytes${selector}`,
-      diskFreeBytes: `minecraft_disk_free_bytes${selector}`,
+      diskAvailableBytes: `minecraft_disk_available_bytes${selector}`,
       cpuCores: `minecraft_container_cpu_usage_cores${selector} or minecraft_java_cpu_usage_cores${selector} or minecraft_process_cpu_usage_cores${selector}`,
       memoryPercent: `100 * minecraft_container_memory_usage_bytes${selector} / minecraft_container_memory_limit_bytes${selector}`,
       networkRxBps: `rate(minecraft_container_network_receive_bytes_total${selector}[1m])`,
@@ -137,7 +138,7 @@ export class PrometheusClient {
       uptimeNow,
       diskUsageNow,
       diskTotalNow,
-      diskFreeNow,
+      diskAvailableNow,
       playerSessionsNow,
       playerDuration7d,
     ] = await Promise.all([
@@ -154,7 +155,7 @@ export class PrometheusClient {
       this.query(queries.uptimeSeconds),
       this.query(queries.diskUsagePercent),
       this.query(queries.diskTotalBytes),
-      this.query(queries.diskFreeBytes),
+      this.query(queries.diskAvailableBytes),
       this.query(queries.playerSessions),
       this.query(queries.playerDuration7d),
     ]);
@@ -170,7 +171,7 @@ export class PrometheusClient {
         uptimeSeconds: latestValue(uptimeNow),
         diskUsagePercent: latestValue(diskUsageNow),
         diskTotalBytes: latestValue(diskTotalNow),
-        diskFreeBytes: latestValue(diskFreeNow),
+        diskAvailableBytes: latestValue(diskAvailableNow),
       },
       series: {
         playersOnline: rangeSeries(playersOnlineRange),

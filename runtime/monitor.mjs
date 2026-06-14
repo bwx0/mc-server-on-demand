@@ -19,6 +19,7 @@ const PROM_PUSH_METHOD = process.env.PROM_PUSH_METHOD || 'POST';
 const PROM_JOB = process.env.PROM_JOB || 'minecraft';
 const PROM_INSTANCE = process.env.PROM_INSTANCE || os.hostname();
 const PROM_SERVER_LABEL = process.env.PROM_SERVER_LABEL || 'mc';
+const DATA_MOUNT = process.env.DATA_DIR || '/data';
 const RUNTIME_STARTED_AT = Date.now();
 
 const AUTH = 3;
@@ -138,6 +139,7 @@ function parsePlayers(listOutput) {
 async function diskUsage(path) {
   try {
     const stat = await fs.statfs(path);
+    // bavail reflects remaining space usable on the mounted volume (e.g. /data cloud disk).
     return {
       path,
       totalBytes: stat.blocks * stat.bsize,
@@ -337,7 +339,7 @@ async function collectPayload() {
     loadavg: os.loadavg(),
     freeMemBytes: os.freemem(),
     totalMemBytes: os.totalmem(),
-    disk: await diskUsage('/data'),
+    disk: await diskUsage(DATA_MOUNT),
     cgroupMemory: await cgroupMemory(),
     cpuUsageCores: await cgroupCpuUsageCores(),
     javaCpuUsageCores: await javaCpuUsageCores(),
