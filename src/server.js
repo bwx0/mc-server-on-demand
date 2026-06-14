@@ -225,7 +225,7 @@ async function route(req, res) {
     // Only admins may stop a maintenance/recovery runtime.
     const current = await store.read();
     if (current.mode === 'maintenance' && req.controlRole !== 'admin') {
-      const error = new Error('服务器维护中，仅管理员可停止。');
+      const error = new Error('服务器维护中');
       error.status = 403;
       throw error;
     }

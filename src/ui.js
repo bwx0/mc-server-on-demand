@@ -533,7 +533,7 @@ export function renderUi() {
     };
     document.getElementById('stop').onclick = () => {
       if (lastState?.mode === 'maintenance' && currentRole !== 'admin') {
-        alert('服务器维护中，仅管理员可停止。');
+        alert('服务器维护中');
         return undefined;
       }
       return runAction(() => request('/api/stop', { method: 'POST', body: JSON.stringify({ force: false }) }, '安全停止中...'));
