@@ -6,9 +6,10 @@ RUN apt-get update \
 
 WORKDIR /data
 COPY container-entrypoint.sh /entrypoint.sh
+COPY server-init.sh /opt/mc-runtime/server-init.sh
 COPY monitor.mjs /opt/mc-monitor/monitor.mjs
 
-RUN chmod +x /entrypoint.sh /opt/mc-monitor/monitor.mjs
+RUN chmod +x /entrypoint.sh /opt/mc-runtime/server-init.sh /opt/mc-monitor/monitor.mjs
 
 EXPOSE 25565/tcp 25575/tcp
 ENTRYPOINT ["/entrypoint.sh"]
